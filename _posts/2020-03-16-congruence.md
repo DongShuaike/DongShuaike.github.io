@@ -1,3 +1,9 @@
+---
+layout: post
+title:  "From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)"
+date:   2020-03-09 13:56:45 +0800
+categories: math crypto
+---
 ## From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)
 
 Recently I was taking the role of TA as a software security course. Part One of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.

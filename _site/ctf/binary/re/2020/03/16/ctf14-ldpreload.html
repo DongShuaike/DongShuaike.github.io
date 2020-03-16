@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+	<!-- 数学公式 -->
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      inlineMath: [['$','$']]
+    }
+  });
+</script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>The LD_PRELOAD usage in ctf | Personal blog of Shuaike Dong</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="The LD_PRELOAD usage in ctf" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”" />
+<meta property="og:description" content="Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”" />
+<link rel="canonical" href="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" />
+<meta property="og:url" content="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" />
+<meta property="og:site_name" content="Personal blog of Shuaike Dong" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-03-16T13:56:45+08:00" />
+<script type="application/ld+json">
+{"@type":"BlogPosting","headline":"The LD_PRELOAD usage in ctf","dateModified":"2020-03-16T13:56:45+08:00","datePublished":"2020-03-16T13:56:45+08:00","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html"},"url":"http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html","description":"Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="Personal blog of Shuaike Dong" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Personal blog of Shuaike Dong</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">The LD_PRELOAD usage in ctf</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2020-03-16T13:56:45+08:00" itemprop="datePublished">Mar 16, 2020
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of <strong>LD_PRELOAD</strong>”</p>
+
+<p>The problem is named <strong><em>Hack In The Box Amsterdam: Bin 100</em></strong> (2014), in which we are given a <code class="highlighter-rouge">elf</code> binary called hitb_bin100.elf.</p>
+
+<p>First let’s <code class="highlighter-rouge">file</code> it to see the basic information.
+<img src="imgs/20200311-114439.png" alt="" />
+As the image shown, the binary is a 64-bit dynamically linked file.</p>
+
+<p>Now run it <code class="highlighter-rouge">chmod +x ./hitb-bin100.elf &amp;&amp; ./hitb-bin100.elf</code>.
+<img src="imgs/20200311-114647.png" alt="" /></p>
+
+<p>The binary keeps printing out random lyrics with an around one-second time gap in between.</p>
+
+<p>I then dragged it into ida-pro to see what’s inside.<img src="imgs/20200311-114836.png" alt="" /></p>
+
+<p>The control flow graph seems normal with two obvious loop structures (red and blue).</p>
+
+<p>Following the control flow I found a basic block(actually not a real basic block, it’s just a unit block in ida super control flow graphs). 
+<img src="imgs/20200311-115032.png" alt="" /></p>
+
+<p>This piece of code make me review how arguments are passed in x64 assembly:</p>
+
+<blockquote>
+  <p>Generally when there are fewer than <strong>7</strong> arguments we will store them into registers: <strong>rdi, rsi, rdx, rcx, r8, and r9</strong> from <strong>left</strong> to the <strong>right</strong>. While when the number of arguments is larger thant 7, those extra arguments are <strong>pushed into the stack</strong> from <strong>right</strong> to <strong>left</strong>, which stays the same as x86 assembly.</p>
+</blockquote>
+
+<blockquote>
+  <p>Apart from that, the return value of a function is first passed to <strong>rax</strong>. If there is a second return value, it will be passed to <strong>rdx</strong>.</p>
+</blockquote>
+
+<p>OK, now let’s see what does this code block do by translating it into the C code.</p>
+
+<ol>
+  <li>The prototype of <code class="highlighter-rouge">time()</code> in C is <code class="highlighter-rouge">time_t time (time_t* timer)</code>, it will return the current time information in a <code class="highlighter-rouge">time_t</code> struct object.</li>
+  <li>After that, the address of that  <code class="highlighter-rouge">time_t</code> object is  passed to <code class="highlighter-rouge">srand</code> as the argument. The <code class="highlighter-rouge">srand()</code> function is to initialize the psedu-random number generator with the current time info.</li>
+  <li><code class="highlighter-rouge">rand()</code> function executes, producing a psedu-random number and stores it in register <code class="highlighter-rouge">r13d</code>. (Note that <code class="highlighter-rouge">d</code> in <code class="highlighter-rouge">r13d</code> refers to <code class="highlighter-rouge">double-word</code> which means <code class="highlighter-rouge">r13d</code> has the size of 32 bits.)</li>
+  <li>The value of <code class="highlighter-rouge">r13d</code> is stored to <code class="highlighter-rouge">[rsp+rbx+198h+var_188]</code> and then the lyric with the offset <code class="highlighter-rouge">[rbx*8]</code> in <code class="highlighter-rouge">funny</code> variable is fetched and stored into <code class="highlighter-rouge">r13</code>.</li>
+</ol>
+
+<p>Now let’s move to the next code block.
+<img src="imgs/20200311-123753.png" alt="" /></p>
+
+<p>Inside it we find there is a string searching operation done by <code class="highlighter-rouge">repne scasb</code>. For <code class="highlighter-rouge">repne scasb</code>, we just search <code class="highlighter-rouge">eax</code> in target string <code class="highlighter-rouge">[rsi:rdi]</code>. In this case, <code class="highlighter-rouge">eax</code> is zero and therefore the code snippet is actually looking for the end of a C string. <code class="highlighter-rouge">rcx</code> keeps the number of attempts to do the search, which is the length of the target string.</p>
+
+<p><code class="highlighter-rouge">rcx</code> is then compared with <code class="highlighter-rouge">r12</code> which has been <code class="highlighter-rouge">xor</code>ed to zero in the previous block. Let’s see what if the string being scanned is not zero length.</p>
+
+<p><img src="imgs/20200311-124748.png" alt="" /></p>
+
+<p>If the string length is not zero, the string will be output by <code class="highlighter-rouge">printf_chk</code> and then the machine will <strong>sleep</strong> for one second.</p>
+
+<p><img src="imgs/20200311-124917.png" alt="" /></p>
+
+<p>And until <code class="highlighter-rouge">[rsp+198+var_190]</code> is decreased to zero, will we jump to the final treasure target:</p>
+
+<p><img src="imgs/20200311-125010.png" alt="" /></p>
+
+<p>There we output the value of the key.</p>
+
+<p>Where do we set the value of <code class="highlighter-rouge">[rsp+198+var_190]</code>?
+<img src="imgs/20200311-125140.png" alt="" /></p>
+
+<p>At this step, we have the intuition of capturing the flag – Just accelerating the loops, so that 31337 can be more quickly deduced to zero.</p>
+
+<p>The first idea is to bypass all the loops and directly run the block 0x4007e8. However, this cannot work, since the key value is fetched from <code class="highlighter-rouge">[rsp+198h+var_188]</code>, which is generated by <code class="highlighter-rouge">rand</code> function byte-by-byte during the big loop.</p>
+
+<p><strong>Note</strong>: As the below image shows, the value of the key is generated byte by byte during the loop. Since the initial seed of the <code class="highlighter-rouge">rand</code> is always the same whenever you run the program (the result <code class="highlighter-rouge">lea edi, [rbp+rax+0]</code> will be the same)</p>
+
+<p><img src="imgs/20200311-131024.png" alt="" /></p>
+
+<p>Now comes to the second idea, we change the <code class="highlighter-rouge">sleep(1)</code> to <code class="highlighter-rouge">sleep(0)</code>. Does it work?</p>
+
+<p>No. The result is like below.
+<img src="imgs/20200311-143849.png" alt="" /></p>
+
+<p>Why <code class="highlighter-rouge">sleep()</code> matters a lot?</p>
+
+
+  </div><a class="u-url" href="/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Personal blog of Shuaike Dong</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Personal blog of Shuaike Dong</li><li><a class="u-email" href="mailto:dsk930817@gmail.com">dsk930817@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>A personal blog of my daily research life.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

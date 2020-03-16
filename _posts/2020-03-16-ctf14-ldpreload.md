@@ -1,3 +1,10 @@
+---
+layout: post
+title:  "The LD_PRELOAD usage in ctf"
+date:   2020-03-16 13:56:45 +0800
+categories: ctf binary RE
+---
+
 Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured "usage of **LD_PRELOAD**"
 
 The problem is named ***Hack In The Box Amsterdam: Bin 100*** (2014), in which we are given a `elf` binary called hitb_bin100.elf.

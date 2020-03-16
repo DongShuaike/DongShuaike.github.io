@@ -1,4 +1,78 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-03-09T18:56:35+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>Write an awesome description for your new site here. You can edit this line in _config.yml. It will appear in your document head meta (for Google search results) and in your feed.xml site description.</subtitle><entry><title type="html">Welcome to Jekyll!</title><link href="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html" rel="alternate" type="text/html" title="Welcome to Jekyll!" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll</id><content type="html" xml:base="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html">&lt;p&gt;You’ll find this post in your &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll serve&lt;/code&gt;, which launches a web server and auto-regenerates your site when a file is updated.&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-03-16T22:34:21+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>A personal blog of my daily research life.</subtitle><entry><title type="html">The LD_PRELOAD usage in ctf</title><link href="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" rel="alternate" type="text/html" title="The LD_PRELOAD usage in ctf" /><published>2020-03-16T13:56:45+08:00</published><updated>2020-03-16T13:56:45+08:00</updated><id>http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload</id><content type="html" xml:base="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html">&lt;p&gt;Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of &lt;strong&gt;LD_PRELOAD&lt;/strong&gt;”&lt;/p&gt;
+
+&lt;p&gt;The problem is named &lt;strong&gt;&lt;em&gt;Hack In The Box Amsterdam: Bin 100&lt;/em&gt;&lt;/strong&gt; (2014), in which we are given a &lt;code class=&quot;highlighter-rouge&quot;&gt;elf&lt;/code&gt; binary called hitb_bin100.elf.&lt;/p&gt;
+
+&lt;p&gt;First let’s &lt;code class=&quot;highlighter-rouge&quot;&gt;file&lt;/code&gt; it to see the basic information.
+&lt;img src=&quot;imgs/20200311-114439.png&quot; alt=&quot;&quot; /&gt;
+As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
+
+&lt;p&gt;Now run it &lt;code class=&quot;highlighter-rouge&quot;&gt;chmod +x ./hitb-bin100.elf &amp;amp;&amp;amp; ./hitb-bin100.elf&lt;/code&gt;.
+&lt;img src=&quot;imgs/20200311-114647.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;The binary keeps printing out random lyrics with an around one-second time gap in between.&lt;/p&gt;
+
+&lt;p&gt;I then dragged it into ida-pro to see what’s inside.&lt;img src=&quot;imgs/20200311-114836.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;The control flow graph seems normal with two obvious loop structures (red and blue).&lt;/p&gt;
+
+&lt;p&gt;Following the control flow I found a basic block(actually not a real basic block, it’s just a unit block in ida super control flow graphs). 
+&lt;img src=&quot;imgs/20200311-115032.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;This piece of code make me review how arguments are passed in x64 assembly:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Generally when there are fewer than &lt;strong&gt;7&lt;/strong&gt; arguments we will store them into registers: &lt;strong&gt;rdi, rsi, rdx, rcx, r8, and r9&lt;/strong&gt; from &lt;strong&gt;left&lt;/strong&gt; to the &lt;strong&gt;right&lt;/strong&gt;. While when the number of arguments is larger thant 7, those extra arguments are &lt;strong&gt;pushed into the stack&lt;/strong&gt; from &lt;strong&gt;right&lt;/strong&gt; to &lt;strong&gt;left&lt;/strong&gt;, which stays the same as x86 assembly.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Apart from that, the return value of a function is first passed to &lt;strong&gt;rax&lt;/strong&gt;. If there is a second return value, it will be passed to &lt;strong&gt;rdx&lt;/strong&gt;.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;OK, now let’s see what does this code block do by translating it into the C code.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The prototype of &lt;code class=&quot;highlighter-rouge&quot;&gt;time()&lt;/code&gt; in C is &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t time (time_t* timer)&lt;/code&gt;, it will return the current time information in a &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t&lt;/code&gt; struct object.&lt;/li&gt;
+  &lt;li&gt;After that, the address of that  &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t&lt;/code&gt; object is  passed to &lt;code class=&quot;highlighter-rouge&quot;&gt;srand&lt;/code&gt; as the argument. The &lt;code class=&quot;highlighter-rouge&quot;&gt;srand()&lt;/code&gt; function is to initialize the psedu-random number generator with the current time info.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;rand()&lt;/code&gt; function executes, producing a psedu-random number and stores it in register &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt;. (Note that &lt;code class=&quot;highlighter-rouge&quot;&gt;d&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; refers to &lt;code class=&quot;highlighter-rouge&quot;&gt;double-word&lt;/code&gt; which means &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; has the size of 32 bits.)&lt;/li&gt;
+  &lt;li&gt;The value of &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; is stored to &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+rbx+198h+var_188]&lt;/code&gt; and then the lyric with the offset &lt;code class=&quot;highlighter-rouge&quot;&gt;[rbx*8]&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;funny&lt;/code&gt; variable is fetched and stored into &lt;code class=&quot;highlighter-rouge&quot;&gt;r13&lt;/code&gt;.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Now let’s move to the next code block.
+&lt;img src=&quot;imgs/20200311-123753.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Inside it we find there is a string searching operation done by &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;. For &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;, we just search &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; in target string &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsi:rdi]&lt;/code&gt;. In this case, &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; is zero and therefore the code snippet is actually looking for the end of a C string. &lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; keeps the number of attempts to do the search, which is the length of the target string.&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; is then compared with &lt;code class=&quot;highlighter-rouge&quot;&gt;r12&lt;/code&gt; which has been &lt;code class=&quot;highlighter-rouge&quot;&gt;xor&lt;/code&gt;ed to zero in the previous block. Let’s see what if the string being scanned is not zero length.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;imgs/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;If the string length is not zero, the string will be output by &lt;code class=&quot;highlighter-rouge&quot;&gt;printf_chk&lt;/code&gt; and then the machine will &lt;strong&gt;sleep&lt;/strong&gt; for one second.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;imgs/20200311-124917.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;And until &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt; is decreased to zero, will we jump to the final treasure target:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;imgs/20200311-125010.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;There we output the value of the key.&lt;/p&gt;
+
+&lt;p&gt;Where do we set the value of &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt;?
+&lt;img src=&quot;imgs/20200311-125140.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;At this step, we have the intuition of capturing the flag – Just accelerating the loops, so that 31337 can be more quickly deduced to zero.&lt;/p&gt;
+
+&lt;p&gt;The first idea is to bypass all the loops and directly run the block 0x4007e8. However, this cannot work, since the key value is fetched from &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198h+var_188]&lt;/code&gt;, which is generated by &lt;code class=&quot;highlighter-rouge&quot;&gt;rand&lt;/code&gt; function byte-by-byte during the big loop.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Note&lt;/strong&gt;: As the below image shows, the value of the key is generated byte by byte during the loop. Since the initial seed of the &lt;code class=&quot;highlighter-rouge&quot;&gt;rand&lt;/code&gt; is always the same whenever you run the program (the result &lt;code class=&quot;highlighter-rouge&quot;&gt;lea edi, [rbp+rax+0]&lt;/code&gt; will be the same)&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;imgs/20200311-131024.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Now comes to the second idea, we change the &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(1)&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(0)&lt;/code&gt;. Does it work?&lt;/p&gt;
+
+&lt;p&gt;No. The result is like below.
+&lt;img src=&quot;imgs/20200311-143849.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Why &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep()&lt;/code&gt; matters a lot?&lt;/p&gt;</content><author><name></name></author><summary type="html">Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”</summary></entry><entry><title type="html">Welcome to Jekyll!</title><link href="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html" rel="alternate" type="text/html" title="Welcome to Jekyll!" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll</id><content type="html" xml:base="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html">&lt;p&gt;You’ll find this post in your &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll serve&lt;/code&gt;, which launches a web server and auto-regenerates your site when a file is updated.&lt;/p&gt;
 
 &lt;p&gt;To add new posts, simply add a file in the &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory that follows the convention &lt;code class=&quot;highlighter-rouge&quot;&gt;YYYY-MM-DD-name-of-post.ext&lt;/code&gt; and includes the necessary front matter. Take a look at the source for this post to get an idea about how it works.&lt;/p&gt;
 
@@ -10,4 +84,84 @@
 &lt;span class=&quot;n&quot;&gt;print_hi&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;'Tom'&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
 &lt;span class=&quot;c1&quot;&gt;#=&amp;gt; prints 'Hi, Tom' to STDOUT.&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
 
-&lt;p&gt;Check out the &lt;a href=&quot;https://jekyllrb.com/docs/home&quot;&gt;Jekyll docs&lt;/a&gt; for more info on how to get the most out of Jekyll. File all bugs/feature requests at &lt;a href=&quot;https://github.com/jekyll/jekyll&quot;&gt;Jekyll’s GitHub repo&lt;/a&gt;. If you have questions, you can ask them on &lt;a href=&quot;https://talk.jekyllrb.com/&quot;&gt;Jekyll Talk&lt;/a&gt;.&lt;/p&gt;</content><author><name></name></author><summary type="html">You’ll find this post in your _posts directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run jekyll serve, which launches a web server and auto-regenerates your site when a file is updated.</summary></entry></feed>
+&lt;p&gt;Check out the &lt;a href=&quot;https://jekyllrb.com/docs/home&quot;&gt;Jekyll docs&lt;/a&gt; for more info on how to get the most out of Jekyll. File all bugs/feature requests at &lt;a href=&quot;https://github.com/jekyll/jekyll&quot;&gt;Jekyll’s GitHub repo&lt;/a&gt;. If you have questions, you can ask them on &lt;a href=&quot;https://talk.jekyllrb.com/&quot;&gt;Jekyll Talk&lt;/a&gt;.&lt;/p&gt;</content><author><name></name></author><summary type="html">You’ll find this post in your _posts directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run jekyll serve, which launches a web server and auto-regenerates your site when a file is updated.</summary></entry><entry><title type="html">From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)</title><link href="http://localhost:4000/math/crypto/2020/03/09/congruence.html" rel="alternate" type="text/html" title="From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/math/crypto/2020/03/09/congruence</id><content type="html" xml:base="http://localhost:4000/math/crypto/2020/03/09/congruence.html">&lt;h2 id=&quot;from-congruence-to-extended-euclidean-crt-and-crt-optimized-rsa-part-1&quot;&gt;From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)&lt;/h2&gt;
+
+&lt;p&gt;Recently I was taking the role of TA as a software security course. Part One of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.&lt;/p&gt;
+
+&lt;p&gt;In this blog I dive into some number theory backgrounds and they are pretty important in understanding RSA algorithm.&lt;/p&gt;
+
+&lt;p&gt;The first concept is congruence. When $A$ and $B$ have the same result doing modular arithmetic, we say $A$ &lt;strong&gt;is congruent to&lt;/strong&gt; $B$. The mathematical way of representing this is $A \equiv B\mod n$.
+Note that $\equiv$ is to describe the equivalence relation between two elements. We usually pair an operation (in this case, the operation is “mod”) with it. Therefore, we can say&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;$1 \equiv 3$ is true with the equivalence relation “has the same remainder upon division by 2”
+– &lt;cite&gt; &lt;a href=&quot;https://math.stackexchange.com/questions/1058596/in-plain-language-whats-the-difference-between-two-things-that-are-equivalent&quot;&gt;Qiaochu Yuan&lt;/a&gt;&lt;/cite&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;From the outside looking we may infer congruence has a lot of in common with equality. Actually it is. Congruence has a lot of properties:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;if we have $ a \equiv b \mod m $ and $c \equiv d \mod m$, we then hold following relations:&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;(1) $a+c \equiv b+d(\mod m)$&lt;/p&gt;
+
+&lt;p&gt;(2) $a-c \equiv b-d(\mod m)$&lt;/p&gt;
+
+&lt;p&gt;(3) $ac \equiv bd(\mod m)$&lt;/p&gt;
+
+&lt;p&gt;(4) $a^n \equiv b^n(\mod m)$&lt;/p&gt;
+
+&lt;p&gt;These can be easily proved from the definition of congruence: if $a \equiv b \mod m$, then $a = k*m+b$.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;We cannot directly transfer division property of equality into congruence, which means:&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If we have $ak \equiv bk \mod m$ where $k\neq 0$, we &lt;strong&gt;cannot&lt;/strong&gt; get $a \equiv b \mod m$.&lt;/p&gt;
+
+&lt;p&gt;Actually when we are dealing with division in congruence arithmetic, we need to find the &lt;strong&gt;modular inverse&lt;/strong&gt;. For $a \equiv b mod m$, we use $a^{-1}$ to be $a$’s modular inverse, then we have the following relation:&lt;/p&gt;
+
+&lt;p&gt;$aa^{-1}\equiv 1\mod m$.&lt;/p&gt;
+
+&lt;p&gt;The modular inverse seems not easy to understand, why do we use such concept?&lt;/p&gt;
+
+&lt;p&gt;As we know, for rational numbers, division is the inverse operation of multiplication. However, for congruence, the inverse operation of multiplication is &lt;strong&gt;&lt;em&gt;modular inverse&lt;/em&gt;&lt;/strong&gt;, which means, if you want to calculate $\frac{a}{b} \mod m$, you should use $a*b^{-1} \mod m$ instead. Since $b^{-1}$ only exists when $b$ satisfies some conditions, we know getting $a \equiv b \mod m$ from $ak \equiv bk \mod m$ does not always hold.&lt;/p&gt;
+
+&lt;p&gt;When does it hold?
+The answer is “when $gcd(k,m)=1$.&lt;/p&gt;
+
+&lt;p&gt;The modular inverse plays a big role in RSA crypto. How to calculate it? We can use &lt;strong&gt;&lt;em&gt;Extended Euclidean&lt;/em&gt;&lt;/strong&gt; algorithm.
+As we all know, the Euclidean algorithm works like below:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def gcd(a,b):
+  if b == 0:
+    return a
+  return gcd(b, a%b)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;So what is Extended Euclidean algorithm? It is used to solve a equation of two unknowns like below:
+$ax+by = gcd(a,b)$ &lt;a href=&quot;https://math.stackexchange.com/questions/1058596/in-plain-language-whats-the-difference-between-two-things-that-are-equivalent&quot;&gt;1&lt;/a&gt;
+Using EEuc we can get $x$, $y$ and $gcd(a,b)$ at the same time. (There will be infinite solutions $x$ and $y$) How does it work?
+From the definition of &lt;code class=&quot;highlighter-rouge&quot;&gt;gcd&lt;/code&gt; function above, we know before &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; becoming zero, we have &lt;code class=&quot;highlighter-rouge&quot;&gt;gcd(a,b) == gcd(b,a%b)&lt;/code&gt;, therefore, we use &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;a%b&lt;/code&gt; to replace &lt;code class=&quot;highlighter-rouge&quot;&gt;a&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; in the above equation and get:
+$bx+(a\%b)y = gcd(b,a\%b) = gcd(a,b)$ [2]
+From the definition of modular arithmetic, we have $a\%b = a-\lfloor \frac{a}{b}\rfloor\times b$, taking it into the above equation we get $(x-\lfloor \frac{a}{b}\rfloor y)b+ya = gcd(a,b) = xa+yb$&lt;/p&gt;
+
+&lt;p&gt;Yep, since the extended euclidean algorithm is actually an iterative algorithm, therefore we use the word $x_1$ and $y_1$ to represent the $x$ and $y$ in [2] then we have
+$y_1 = x_0$
+$x_1 = y_0+\lfloor\frac{a}{b}\rfloor \times y_1$
+Now we know how to write the &lt;code class=&quot;highlighter-rouge&quot;&gt;ext_euc&lt;/code&gt; function:
+Let’s assume it takes 2 parameters &lt;code class=&quot;highlighter-rouge&quot;&gt;a&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; and will return three values &lt;code class=&quot;highlighter-rouge&quot;&gt;x&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;y&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;gcd(a,b)&lt;/code&gt;.
+The code would be like:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def ext_euc(a,b):
+  if b == 0:
+    x, y = 1, 0
+    return x, y, a
+  x, y, gcd = ext_euc(b, a%b)
+  ny = x
+  nx = y + a//b*ny
+  return nx, ny, gcd
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;If you don’t understand the above code, draw a recursive tree and you will get it.&lt;/p&gt;
+
+&lt;!--The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to get the modular inverse of $b$, we need to find $b^{-1}$ such that $bb^{-1} \equiv 1 \mod n$. If we make $x=0$ then we have $by = gcd(a,b)$. Since the modular inverse of $b$ only exists when $gcd(b,n) = 1$, let $a=n$, the $by=gcd(a,b)$ will turn to $by=gcd(b,n)=1$, and $y$ is the modular inverse of $b$, which can be solved by Extended Euclidean algorithm, just invoke `ext_euc(n,b)`--&gt;
+&lt;p&gt;The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to calculate the modular inverse of $b$, $b^{-1}$ will only exist when $gcd(a,b)=1$. Take it into $ax+by=gcd(a,b)$ we have $ax+by=1$, make both sides of the equation mod $a$, we have $by=1 \mod a$, therefore we get $y$, which is the modular inverse of $b$.&lt;/p&gt;
+
+&lt;p&gt;In the second part, I will introduce what CRT is and how CRT makes RSA faster.&lt;/p&gt;</content><author><name></name></author><summary type="html">From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)</summary></entry></feed>
