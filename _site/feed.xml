@@ -1,13 +1,35 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-03-17T11:09:44+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>A personal blog of my daily research life.</subtitle><entry><title type="html">The LD_PRELOAD usage in ctf</title><link href="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" rel="alternate" type="text/html" title="The LD_PRELOAD usage in ctf" /><published>2020-03-16T13:56:45+08:00</published><updated>2020-03-16T13:56:45+08:00</updated><id>http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload</id><content type="html" xml:base="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html">&lt;p&gt;Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of &lt;strong&gt;LD_PRELOAD&lt;/strong&gt;”&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-03-17T11:10:32+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>A personal blog of my daily research life.</subtitle><entry><title type="html">The LD_PRELOAD usage in ctf</title><link href="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" rel="alternate" type="text/html" title="The LD_PRELOAD usage in ctf" /><published>2020-03-16T13:56:45+08:00</published><updated>2020-03-16T13:56:45+08:00</updated><id>http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload</id><content type="html" xml:base="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html">&lt;p&gt;Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of &lt;strong&gt;LD_PRELOAD&lt;/strong&gt;”&lt;/p&gt;
 
 &lt;p&gt;The problem is named &lt;strong&gt;&lt;em&gt;Hack In The Box Amsterdam: Bin 100&lt;/em&gt;&lt;/strong&gt; (2014), in which we are given a &lt;code class=&quot;highlighter-rouge&quot;&gt;elf&lt;/code&gt; binary called hitb_bin100.elf.&lt;/p&gt;
 
 &lt;p&gt;First let’s &lt;code class=&quot;highlighter-rouge&quot;&gt;file&lt;/code&gt; it to see the basic information.
+«««&amp;lt; HEAD
 &lt;img src=&quot;/images/20200311-114439.png&quot; alt=&quot;&quot; /&gt;
 As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 
 &lt;p&gt;Now run it &lt;code class=&quot;highlighter-rouge&quot;&gt;chmod +x ./hitb-bin100.elf &amp;amp;&amp;amp; ./hitb-bin100.elf&lt;/code&gt;.
-&lt;img src=&quot;/images/20200311-114647.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;img src=&quot;/images/20200311-114647.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-114439.png&quot; alt=&quot;&quot; /&gt;
+As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
+
+&lt;p&gt;Now run it &lt;code class=&quot;highlighter-rouge&quot;&gt;chmod +x ./hitb-bin100.elf &amp;amp;&amp;amp; ./hitb-bin100.elf&lt;/code&gt;.
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-114647.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;The binary keeps printing out random lyrics with an around one-second time gap in between.&lt;/p&gt;
 
@@ -16,7 +38,25 @@ As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 &lt;p&gt;The control flow graph seems normal with two obvious loop structures (red and blue).&lt;/p&gt;
 
 &lt;p&gt;Following the control flow I found a basic block(actually not a real basic block, it’s just a unit block in ida super control flow graphs). 
-&lt;img src=&quot;/images/20200311-115032.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-115032.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-115032.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;This piece of code make me review how arguments are passed in x64 assembly:&lt;/p&gt;
 
@@ -38,13 +78,32 @@ As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 &lt;/ol&gt;
 
 &lt;p&gt;Now let’s move to the next code block.
-&lt;img src=&quot;/images/20200311-123753.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-123753.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-123753.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;Inside it we find there is a string searching operation done by &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;. For &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;, we just search &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; in target string &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsi:rdi]&lt;/code&gt;. In this case, &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; is zero and therefore the code snippet is actually looking for the end of a C string. &lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; keeps the number of attempts to do the search, which is the length of the target string.&lt;/p&gt;
 
 &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; is then compared with &lt;code class=&quot;highlighter-rouge&quot;&gt;r12&lt;/code&gt; which has been &lt;code class=&quot;highlighter-rouge&quot;&gt;xor&lt;/code&gt;ed to zero in the previous block. Let’s see what if the string being scanned is not zero length.&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
 
 &lt;p&gt;If the string length is not zero, the string will be output by &lt;code class=&quot;highlighter-rouge&quot;&gt;printf_chk&lt;/code&gt; and then the machine will &lt;strong&gt;sleep&lt;/strong&gt; for one second.&lt;/p&gt;
 
@@ -52,12 +111,54 @@ As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 
 &lt;p&gt;And until &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt; is decreased to zero, will we jump to the final treasure target:&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-125010.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;h1&gt;&lt;img src=&quot;/images/20200311-125010.png&quot; alt=&quot;&quot; /&gt;&lt;/h1&gt;
+&lt;p&gt;&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;If the string length is not zero, the string will be output by &lt;code class=&quot;highlighter-rouge&quot;&gt;printf_chk&lt;/code&gt; and then the machine will &lt;strong&gt;sleep&lt;/strong&gt; for one second.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-124917.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;And until &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt; is decreased to zero, will we jump to the final treasure target:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-125010.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;There we output the value of the key.&lt;/p&gt;
 
 &lt;p&gt;Where do we set the value of &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt;?
-&lt;img src=&quot;/images/20200311-125140.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-125140.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-125140.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;At this step, we have the intuition of capturing the flag – Just accelerating the loops, so that 31337 can be more quickly deduced to zero.&lt;/p&gt;
 
@@ -65,12 +166,48 @@ As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 
 &lt;p&gt;&lt;strong&gt;Note&lt;/strong&gt;: As the below image shows, the value of the key is generated byte by byte during the loop. Since the initial seed of the &lt;code class=&quot;highlighter-rouge&quot;&gt;rand&lt;/code&gt; is always the same whenever you run the program (the result &lt;code class=&quot;highlighter-rouge&quot;&gt;lea edi, [rbp+rax+0]&lt;/code&gt; will be the same)&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-131024.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-131024.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-131024.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;Now comes to the second idea, we change the &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(1)&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(0)&lt;/code&gt;. Does it work?&lt;/p&gt;
 
 &lt;p&gt;No. The result is like below.
-&lt;img src=&quot;/images/20200311-143849.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+«««&amp;lt; HEAD
+&lt;img src=&quot;/images/20200311-143849.png&quot; alt=&quot;&quot; /&gt;
+=======
+&lt;img src=&quot;/ctf/binary/re/2020/03/16/imgs/20200311-143849.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;blockquote&gt;
+    &lt;blockquote&gt;
+      &lt;blockquote&gt;
+        &lt;blockquote&gt;
+          &lt;blockquote&gt;
+            &lt;blockquote&gt;
+              &lt;p&gt;1591b672748d3dba9b3f2c5035135db7912c5e13&lt;/p&gt;
+            &lt;/blockquote&gt;
+          &lt;/blockquote&gt;
+        &lt;/blockquote&gt;
+      &lt;/blockquote&gt;
+    &lt;/blockquote&gt;
+  &lt;/blockquote&gt;
+&lt;/blockquote&gt;
 
 &lt;p&gt;Why &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep()&lt;/code&gt; matters a lot?&lt;/p&gt;</content><author><name></name></author><summary type="html">Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”</summary></entry><entry><title type="html">Welcome to Jekyll!</title><link href="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html" rel="alternate" type="text/html" title="Welcome to Jekyll!" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll</id><content type="html" xml:base="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html">&lt;p&gt;You’ll find this post in your &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll serve&lt;/code&gt;, which launches a web server and auto-regenerates your site when a file is updated.&lt;/p&gt;
 
