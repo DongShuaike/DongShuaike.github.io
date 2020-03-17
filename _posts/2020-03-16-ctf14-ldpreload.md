@@ -17,11 +17,11 @@ As the image shown, the binary is a 64-bit dynamically linked file.
 Now run it `chmod +x ./hitb-bin100.elf && ./hitb-bin100.elf`.
 ![](/images/20200311-114647.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-114439.png)
+![](/images/20200311-114439.png)
 As the image shown, the binary is a 64-bit dynamically linked file.
 
 Now run it `chmod +x ./hitb-bin100.elf && ./hitb-bin100.elf`.
-![](/ctf/binary/re/2020/03/16/imgs/20200311-114647.png)
+![](/images/20200311-114647.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 The binary keeps printing out random lyrics with an around one-second time gap in between.
@@ -34,7 +34,7 @@ Following the control flow I found a basic block(actually not a real basic block
 <<<<<<< HEAD
 ![](/images/20200311-115032.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-115032.png)
+![](/images/20200311-115032.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 This piece of code make me review how arguments are passed in x64 assembly:
@@ -54,7 +54,7 @@ Now let's move to the next code block.
 <<<<<<< HEAD
 ![](/images/20200311-123753.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-123753.png)
+![](/images/20200311-123753.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 Inside it we find there is a string searching operation done by `repne scasb`. For `repne scasb`, we just search `eax` in target string `[rsi:rdi]`. In this case, `eax` is zero and therefore the code snippet is actually looking for the end of a C string. `rcx` keeps the number of attempts to do the search, which is the length of the target string.
@@ -72,15 +72,15 @@ And until `[rsp+198+var_190]` is decreased to zero, will we jump to the final tr
 
 ![](/images/20200311-125010.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-124748.png)
+![](/images/20200311-124748.png)
 
 If the string length is not zero, the string will be output by `printf_chk` and then the machine will **sleep** for one second.
 
-![](/ctf/binary/re/2020/03/16/imgs/20200311-124917.png)
+![](/images/20200311-124917.png)
 
 And until `[rsp+198+var_190]` is decreased to zero, will we jump to the final treasure target:
 
-![](/ctf/binary/re/2020/03/16/imgs/20200311-125010.png)
+![](/images/20200311-125010.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 There we output the value of the key.
@@ -89,7 +89,7 @@ Where do we set the value of `[rsp+198+var_190]`?
 <<<<<<< HEAD
 ![](/images/20200311-125140.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-125140.png)
+![](/images/20200311-125140.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 At this step, we have the intuition of capturing the flag -- Just accelerating the loops, so that 31337 can be more quickly deduced to zero.
@@ -101,7 +101,7 @@ The first idea is to bypass all the loops and directly run the block 0x4007e8. H
 <<<<<<< HEAD
 ![](/images/20200311-131024.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-131024.png)
+![](/images/20200311-131024.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 Now comes to the second idea, we change the `sleep(1)` to `sleep(0)`. Does it work?
@@ -110,7 +110,7 @@ No. The result is like below.
 <<<<<<< HEAD
 ![](/images/20200311-143849.png)
 =======
-![](/ctf/binary/re/2020/03/16/imgs/20200311-143849.png)
+![](/images/20200311-143849.png)
 >>>>>>> 1591b672748d3dba9b3f2c5035135db7912c5e13
 
 Why `sleep()` matters a lot?
