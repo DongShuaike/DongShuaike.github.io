@@ -4,11 +4,11 @@ title:  "From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)"
 date:   2020-03-09 13:56:45 +0800
 categories: math crypto
 ---
-## From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)
+## From congruence to extended Euclidean, CRT and CRT-optimized RSA (part 1)
 
-Recently I was taking the role of TA as a software security course. Part One of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.
+Recently I was taking the role of TA in a software security course. The first part of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.
 
-In this blog I dive into some number theory backgrounds and they are pretty important in understanding RSA algorithm.
+In this blog I dive into some number theory basics  which are pretty important in understanding RSA algorithm.
 
 The first concept is congruence. When $A$ and $B$ have the same result doing modular arithmetic, we say $A$ **is congruent to** $B$. The mathematical way of representing this is $A \equiv B\mod n$.
 Note that $\equiv$ is to describe the equivalence relation between two elements. We usually pair an operation (in this case, the operation is "mod") with it. Therefore, we can say 
@@ -35,18 +35,18 @@ These can be easily proved from the definition of congruence: if $a \equiv b \mo
 
 If we have $ak \equiv bk \mod m$ where $k\neq 0$, we **cannot** get $a \equiv b \mod m$.
 
-Actually when we are dealing with division in congruence arithmetic, we need to find the **modular inverse**. For $a \equiv b mod m$, we use $a^{-1}$ to be $a$'s modular inverse, then we have the following relation:
+Actually when we are dealing with division in congruence arithmetic, we need to find the **modulo inverse**. For $a \equiv b mod m$, we use $a^{-1}$ to be $a$'s modulo inverse, then we have the following relation:
 
 $aa^{-1}\equiv 1\mod m$.
 
-The modular inverse seems not easy to understand, why do we use such concept?
+The modulo inverse seems not easy to understand, why do we use such concept?
 
-As we know, for rational numbers, division is the inverse operation of multiplication. However, for congruence, the inverse operation of multiplication is ***modular inverse***, which means, if you want to calculate $\frac{a}{b} \mod m$, you should use $a*b^{-1} \mod m$ instead. Since $b^{-1}$ only exists when $b$ satisfies some conditions, we know getting $a \equiv b \mod m$ from $ak \equiv bk \mod m$ does not always hold.
+As we know, for rational numbers, division is the inverse operation of multiplication. However, for congruence, the inverse operation of multiplication is ***modulo inverse***, which means, if you want to calculate $\frac{a}{b} \mod m$, you should use $a*b^{-1} \mod m$ instead. Since $b^{-1}$ only exists when $b$ satisfies some conditions, we know getting $a \equiv b \mod m$ from $ak \equiv bk \mod m$ does not always hold.
 
 When does it hold?
 The answer is "when $gcd(k,m)=1$. 
 
-The modular inverse plays a big role in RSA crypto. How to calculate it? We can use ***Extended Euclidean*** algorithm.
+The modulo inverse plays a big role in RSA crypto. How to calculate it? We can use ***extended Euclidean*** algorithm.
 As we all know, the Euclidean algorithm works like below:
 ```
 def gcd(a,b):
@@ -54,7 +54,7 @@ def gcd(a,b):
     return a
   return gcd(b, a%b)
 ```
-So what is Extended Euclidean algorithm? It is used to solve a equation of two unknowns like below:
+So what is extended Euclidean algorithm? It is used to solve a equation of two unknowns like below:
 $ax+by = gcd(a,b)$ [1]
 Using EEuc we can get $x$, $y$ and $gcd(a,b)$ at the same time. (There will be infinite solutions $x$ and $y$) How does it work?
 From the definition of `gcd` function above, we know before `b` becoming zero, we have `gcd(a,b) == gcd(b,a%b)`, therefore, we use `b` and `a%b` to replace `a` and `b` in the above equation and get:
@@ -79,8 +79,8 @@ def ext_euc(a,b):
 ```
 If you don't understand the above code, draw a recursive tree and you will get it.
 
-<!--The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to get the modular inverse of $b$, we need to find $b^{-1}$ such that $bb^{-1} \equiv 1 \mod n$. If we make $x=0$ then we have $by = gcd(a,b)$. Since the modular inverse of $b$ only exists when $gcd(b,n) = 1$, let $a=n$, the $by=gcd(a,b)$ will turn to $by=gcd(b,n)=1$, and $y$ is the modular inverse of $b$, which can be solved by Extended Euclidean algorithm, just invoke `ext_euc(n,b)`-->
-The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to calculate the modular inverse of $b$, $b^{-1}$ will only exist when $gcd(a,b)=1$. Take it into $ax+by=gcd(a,b)$ we have $ax+by=1$, make both sides of the equation mod $a$, we have $by=1 \mod a$, therefore we get $y$, which is the modular inverse of $b$.
+<!--The common usage of extended Euclidean algorithm is to calculate the modulo inverse. Suppose we want to get the modulo inverse of $b$, we need to find $b^{-1}$ such that $bb^{-1} \equiv 1 \mod n$. If we make $x=0$ then we have $by = gcd(a,b)$. Since the modulo inverse of $b$ only exists when $gcd(b,n) = 1$, let $a=n$, the $by=gcd(a,b)$ will turn to $by=gcd(b,n)=1$, and $y$ is the modulo inverse of $b$, which can be solved by extended Euclidean algorithm, just invoke `ext_euc(n,b)`-->
+The common usage of extended Euclidean algorithm is to calculate the modulo inverse. Suppose we want to calculate the modulo inverse of $b$, $b^{-1}$ will only exist when $gcd(a,b)=1$. Take it into $ax+by=gcd(a,b)$ we have $ax+by=1$, make both sides of the equation mod $a$, we have $by=1 \mod a$, therefore we get $y$, which is the modulo inverse of $b$.
 
 In the second part, I will introduce what CRT is and how CRT makes RSA faster.
 
