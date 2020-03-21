@@ -4,6 +4,7 @@ title: "How Reaching Definition Analysis is implemented in angr"
 date:	2020-03-21 18:01:00 +0800
 categories: angr
 ---
+
 It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it.
 
 I selected the Reaching Definition Analysis (RDA) as the breakthrough.  As its self-definition says: 
