@@ -29,23 +29,23 @@ how abstract values and abstract states are defined, etc.
 `ForwardAnalysis` provides basic building blocks for implementing a forward analysis. The most crutial function is `_analyze`, inside it we can see:
 
 ```
-    def _analyze(self):
-        """
-        The main analysis routine.
+def _analyze(self):
+    """
+    The main analysis routine.
 
-        :return: None
-        """
-        self._pre_analysis()
-        if self._graph_visitor is None:
-            # There is no base graph that we can rely on. The analysis itself should generate successors for the
-            # current job.
-            # An example is the CFG recovery.
+    :return: None
+    """
+    self._pre_analysis()
+    if self._graph_visitor is None:
+        # There is no base graph that we can rely on. The analysis itself should generate successors for the
+        # current job.
+        # An example is the CFG recovery.
 
-            self._analysis_core_baremetal()
-        else:
-            # We have a base graph to follow. Just handle the current job.
-            self._analysis_core_graph()
-        self._post_analysis()
+        self._analysis_core_baremetal()
+    else:
+        # We have a base graph to follow. Just handle the current job.
+        self._analysis_core_graph()
+    self._post_analysis()
 ```
 We can do some self-defined pre-work in `_pre_analysis()`, after that, if we provide a `graph` object to ForwardAnalysis, the control will be given to `_analysis_core_graph()`. After analyzing each node of the graph, we can do some work by `_post_analysis()`.
 
@@ -53,39 +53,39 @@ Diving into `_analysis_core_graph` function, we can see, nodes are unstoppably f
 
 Note that the `state` here is not what we refer to `SimState` when playing angr symbolic execution. It's just a type of program abstraction, you can even define yours.
 ```
-   def _analysis_core_graph(self):
+def _analysis_core_graph(self):
 
-        while not self.should_abort:
+    while not self.should_abort:
 
-            self._intra_analysis()
+        self._intra_analysis()
 
-            n = self._graph_visitor.next_node()
+        n = self._graph_visitor.next_node()
 
-            if n is None:
-                break
+        if n is None:
+            break
 
-            job_state = self._get_input_state(n)
-            if job_state is None:
-                job_state = self._initial_abstract_state(n)
+        job_state = self._get_input_state(n)
+        if job_state is None:
+            job_state = self._initial_abstract_state(n)
 
-            changed, output_state = self._run_on_node(n, job_state)
+        changed, output_state = self._run_on_node(n, job_state)
 
-            # output state of node n is input state for successors to node n
-            successors_to_visit = self._add_input_state(n, output_state)
+        # output state of node n is input state for successors to node n
+        successors_to_visit = self._add_input_state(n, output_state)
 
-            if changed is False:
-                # no change is detected
-                continue
-            elif changed is True:
-                # changes detected
-                # revisit all its successors
-                self._graph_visitor.revisit_successors(n, include_self=False)
-            else:
-                # the change of states are determined during state merging (_add_input_state()) instead of during
-                # simulated execution (_run_on_node()).
-                # revisit all successors in the `successors_to_visit` list
-                for succ in successors_to_visit:
-                    self._graph_visitor.revisit_node(succ)
+        if changed is False:
+            # no change is detected
+            continue
+        elif changed is True:
+            # changes detected
+            # revisit all its successors
+            self._graph_visitor.revisit_successors(n, include_self=False)
+        else:
+            # the change of states are determined during state merging (_add_input_state()) instead of during
+            # simulated execution (_run_on_node()).
+            # revisit all successors in the `successors_to_visit` list
+            for succ in successors_to_visit:
+                self._graph_visitor.revisit_node(succ)
 ```
 
 After knowing the whole structure of ForwardAnalysis, let's jump back to class `ReachingDefinitionsAnalysis`. Tracing from `_analyze()`, we will then reach `self._run_on_node`. Inside it we can find two temporary variables -- `block` and `engine`, the `block` refers to the current code block which is being processed and `engine`, in our case, is an instance of the type `SimEngineRDVEX`, which will be dealt with later.
