@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Paper Reading: Karonte, Detecting Insecure Multi-binary Interactions in Embedded Firmware"
+title:  "[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware"
 date:   2020-04-18 20:12:09 +0800
 categories: paper 
 ---
@@ -25,6 +25,7 @@ The key component of Border Binaries Discovery Module is to recognize those "net
 3. the number of conditional statements used in conjunction with memory comparisons
 4. ***network mark*** (#net)
 5. ***connection mark*** (#conn)
+
 The "network mark" encodes the probability that a parsing function handles network messages. The idea is straight-forward, Karonte just locates those memory comparisons and infer the referenced string used to do the comparison. If the referenced string is in a preset list of ***network-encoding*** strings, #net increments by one.
 
 The "connection mark" indicates if any data read from a network socket is used in a memory comparison. #conn is increased by one if there exists a **data-flow** between a socket read and a memory comparison operation.
@@ -41,6 +42,7 @@ The most common IPC paradigms used in firmware are as follows:
 3. Environment Variables.
 4. Sockets.
 5. Command Line Arguments.
+
 Each instance of an IPC is identified by a unique key called **data key**.
 #### Communication Paradigm Finders
 CPF is used to check whether a path contains the necessary code to share data through the communication paradigm that the CPF represents. If so, it uses the following functionalities to gather them.
