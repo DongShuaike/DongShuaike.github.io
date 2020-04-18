@@ -7,7 +7,7 @@ categories: paper
 
 Recently I read an interesting paper about IoT firmware analysis. Since I'm working around this area, I would like to introduce this and share interesting things about it.
 
-The paper is done by UCSB Sec-lab and Ruoyu Wang's group at Arizona University named **<KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware>**. They proposed a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions.
+The paper is done by UCSB Sec-lab and Ruoyu Wang's group at Arizona University named **\<KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware\>**. They proposed a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions.
 
 This matches the features of IoT devices very well, previous works mainly deal with single binary analysis like [Firmalice](https://www.ndss-symposium.org/wp-content/uploads/2017/09/11_1_2.pdf) and [BootStomp](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-redini.pdf). However, the interactions between multiple components are often ignored or just analyzed from the perspective of behavior instead of code itself, like [IoTFuzzer](https://web.cse.ohio-state.edu/~lin.3021/file/NDSS18b.pdf).
 
