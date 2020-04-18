@@ -44,8 +44,11 @@ The most common IPC paradigms used in firmware are as follows:
 5. Command Line Arguments.
 
 Each instance of an IPC is identified by a unique key called **data key**.
+
 #### Communication Paradigm Finders
+
 CPF is used to check whether a path contains the necessary code to share data through the communication paradigm that the CPF represents. If so, it uses the following functionalities to gather them.
+
 
 1. Data Key Recovery. Which type of IPC the data key is of.
 2. Flow Direction Determination. Whether the binary is a setter or a getter.
