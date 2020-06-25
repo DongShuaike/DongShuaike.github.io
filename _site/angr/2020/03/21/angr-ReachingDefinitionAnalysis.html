@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+	<!-- 数学公式 -->
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      inlineMath: [['$','$']]
+    }
+  });
+</script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>How Reaching Definition Analysis is implemented in angr | Personal blog of Shuaike Dong</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="How Reaching Definition Analysis is implemented in angr" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it." />
+<meta property="og:description" content="It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it." />
+<link rel="canonical" href="/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html" />
+<meta property="og:url" content="/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html" />
+<meta property="og:site_name" content="Personal blog of Shuaike Dong" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-03-21T18:01:00+08:00" />
+<script type="application/ld+json">
+{"mainEntityOfPage":{"@type":"WebPage","@id":"/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html"},"@type":"BlogPosting","url":"/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html","headline":"How Reaching Definition Analysis is implemented in angr","dateModified":"2020-03-21T18:01:00+08:00","datePublished":"2020-03-21T18:01:00+08:00","description":"It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it.","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Personal blog of Shuaike Dong" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Personal blog of Shuaike Dong</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">How Reaching Definition Analysis is implemented in angr</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2020-03-21T18:01:00+08:00" itemprop="datePublished">Mar 21, 2020
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it.</p>
+
+<p>I selected the Reaching Definition Analysis (RDA) as the breakthrough.  As its self-definition says:</p>
+<blockquote>
+  <p>angr is a python framework for analyzing binaries. It combines both static and dynamic symbolic (“concolic”) analysis, making it applicable to a variety of tasks.</p>
+</blockquote>
+
+<p>The most significant advantage of angr is its combination of different types of analysis, and a very good expansibility.</p>
+
+<p>I used PyCharm to do code exploration, thanks to its convenient and powerful Forward/Backward navigation functionalities, I saved a lot of time. <strong>The code I’m referring to is angr-dev version (8, 20, 1, 7)</strong> (outputed by <code class="highlighter-rouge">python -c "import angr; print(angr.__version__)"</code>)</p>
+
+<p>The most obvious class of RDA is <code class="highlighter-rouge">ReachingDefinitionAnalysis</code>, it is inherited from two parent classes <code class="highlighter-rouge">ForwardAnalysis</code> and <code class="highlighter-rouge">Analysis</code>.</p>
+
+<p>Actually <code class="highlighter-rouge">ForwardAnalysis</code> can be regarded as the most important class for you to implement your own analysis “pass” as it provides a foundamental structure for forward analysis.</p>
+
+<blockquote>
+  <p>This is my very first attempt to build a static forward analysis framework that can serve as the base of multiple<br />
+static analyses in angr, including CFG analysis, VFG analysis, DDG, etc.<br />
+In short, ForwardAnalysis performs a forward data-flow analysis by traversing a graph, compute on abstract values,<br />
+and store results in abstract states. The user can specify what graph to traverse, how a graph should be traversed,<br />
+how abstract values and abstract states are defined, etc.
+– Fish</p>
+</blockquote>
+
+<p><code class="highlighter-rouge">ForwardAnalysis</code> provides basic building blocks for implementing a forward analysis. The most crutial function is <code class="highlighter-rouge">_analyze</code>, inside it we can see:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _analyze(self):
+    """
+    The main analysis routine.
+
+    :return: None
+    """
+    self._pre_analysis()
+    if self._graph_visitor is None:
+        # There is no base graph that we can rely on. The analysis itself should generate successors for the
+        # current job.
+        # An example is the CFG recovery.
+
+        self._analysis_core_baremetal()
+    else:
+        # We have a base graph to follow. Just handle the current job.
+        self._analysis_core_graph()
+    self._post_analysis()
+</code></pre></div></div>
+<p>We can do some self-defined pre-work in <code class="highlighter-rouge">_pre_analysis()</code>, after that, if we provide a <code class="highlighter-rouge">graph</code> object to ForwardAnalysis, the control will be given to <code class="highlighter-rouge">_analysis_core_graph()</code>. After analyzing each node of the graph, we can do some work by <code class="highlighter-rouge">_post_analysis()</code>.</p>
+
+<p>Diving into <code class="highlighter-rouge">_analysis_core_graph</code> function, we can see, nodes are unstoppably fetched by <code class="highlighter-rouge">self._graph_visitor.next_node()</code>, on each node, <code class="highlighter-rouge">self._run_on_node()</code> is executed. It returns a new <code class="highlighter-rouge">state</code> named <code class="highlighter-rouge">output_state</code> and the <code class="highlighter-rouge">output_state</code> of the current node will be used as the <code class="highlighter-rouge">input_state</code> of the next node.</p>
+
+<p>Note that the <code class="highlighter-rouge">state</code> here is not what we refer to <code class="highlighter-rouge">SimState</code> when playing angr symbolic execution. It’s just a type of program abstraction, you can even define yours.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _analysis_core_graph(self):
+
+    while not self.should_abort:
+
+        self._intra_analysis()
+
+        n = self._graph_visitor.next_node()
+
+        if n is None:
+            break
+
+        job_state = self._get_input_state(n)
+        if job_state is None:
+            job_state = self._initial_abstract_state(n)
+
+        changed, output_state = self._run_on_node(n, job_state)
+
+        # output state of node n is input state for successors to node n
+        successors_to_visit = self._add_input_state(n, output_state)
+
+        if changed is False:
+            # no change is detected
+            continue
+        elif changed is True:
+            # changes detected
+            # revisit all its successors
+            self._graph_visitor.revisit_successors(n, include_self=False)
+        else:
+            # the change of states are determined during state merging (_add_input_state()) instead of during
+            # simulated execution (_run_on_node()).
+            # revisit all successors in the `successors_to_visit` list
+            for succ in successors_to_visit:
+                self._graph_visitor.revisit_node(succ)
+</code></pre></div></div>
+
+<p>After knowing the whole structure of ForwardAnalysis, let’s jump back to class <code class="highlighter-rouge">ReachingDefinitionsAnalysis</code>. Tracing from <code class="highlighter-rouge">_analyze()</code>, we will then reach <code class="highlighter-rouge">self._run_on_node</code>. Inside it we can find two temporary variables – <code class="highlighter-rouge">block</code> and <code class="highlighter-rouge">engine</code>, the <code class="highlighter-rouge">block</code> refers to the current code block which is being processed and <code class="highlighter-rouge">engine</code>, in our case, is an instance of the type <code class="highlighter-rouge">SimEngineRDVEX</code>, which will be dealt with later.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>self._engine_vex = SimEngineRDVEX(self.project, self._current_local_call_depth, self._maximum_local_call_depth,
+                                          self._function_handler)
+...
+block = self.project.factory.block(node.addr, node.size, opt_level=0)
+block_key = node.addr
+engine = self._engine_vex
+</code></pre></div></div>
+<p>After that we find a key statement <code class="highlighter-rouge">self.node_observe(node.addr, state, OP_BEFORE)</code>. angr RDA, and other similar analysis, provide a concept of <code class="highlighter-rouge">observation</code>, we can set as many observation points as we want so that we can see what is happening there. The observation points can be “instructions” or “blocks”, the time to observe can be “OP_BEFORE” or “OP_AFTER”. For those states already reaching the observation points, they will be stored in a python-dictionary object like the following shows:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>key = 'node', node_addr, op_type
+...
+self.observed_results[key] = state
+</code></pre></div></div>
+<p>Following it, here comes to the very important sentence</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>state, self._visited_blocks = engine.process(
+    state,
+    block=block,
+    fail_fast=self._fail_fast,
+    visited_blocks=self._visited_blocks
+)
+</code></pre></div></div>
+<p>To know how that engine <code class="highlighter-rouge">process</code> a block, we need dive into the code of class <code class="highlighter-rouge">SimEngineRDVEX</code>.
+From <code class="highlighter-rouge">class SimEngineRDVEX(SimEngineRDVEXMinin, SimEngineLight)</code> we can see, <code class="highlighter-rouge">SimEngineRDVEX</code> has inherited something form <code class="highlighter-rouge">SimEngineLight</code> and <code class="highlighter-rouge">SimEngineRDVEXMinin</code>.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def process(self, state, *args, **kwargs):
+    self._def_use_graph = kwargs.pop('def_use_graph', None)
+    self._visited_blocks = kwargs.pop('visited_blocks', None)
+
+    # we are using a completely different state. Therefore, we directly call our _process() method before
+    # SimEngine becomes flexible enough.
+    try:
+        self._process(
+            state,
+            None,
+            block=kwargs.pop('block', None),
+        )
+    except SimEngineError as e:
+        if kwargs.pop('fail_fast', False) is True:
+            raise e
+        l.error(e)
+    return self.state, self._visited_blocks
+</code></pre></div></div>
+<p>The private function <code class="highlighter-rouge">_process</code> in <code class="highlighter-rouge">SimEngineRDVEXMinin</code> leads us to <code class="highlighter-rouge">_proccess_Stmt</code> function.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _process_Stmt(self, whitelist=None):
+  ...
+  for stmt_idx, stmt in enumerate(self.block.vex.statements):
+      if whitelist is not None and stmt_idx not in whitelist:
+          continue
+      self.stmt_idx = stmt_idx
+
+      if type(stmt) is pyvex.IRStmt.IMark:
+          # Note that we cannot skip IMarks as they are used later to trigger observation events
+          self.ins_addr = stmt.addr + stmt.delta
+
+      self._handle_Stmt(stmt)
+</code></pre></div></div>
+<p>Here comes to the exciting part <code class="highlighter-rouge">_handle_Stmt</code>:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _handle_Stmt(self, stmt):
+    handler = "_handle_%s" % type(stmt).__name__
+    if hasattr(self, handler):
+        getattr(self, handler)(stmt)
+</code></pre></div></div>
+<p>We can see it uses <code class="highlighter-rouge">hasattr</code> and <code class="highlighter-rouge">getattr</code> to invoke specitif “Stmt handlers” (like what <code class="highlighter-rouge">Java reflection</code> does), if a developer have their own ways of dealing with different Stmts, he/she can overwrites these and write his/her own.</p>
+
+<p>Back into <code class="highlighter-rouge">SimEngineRDVEX</code> we find there exist a lot of <code class="highlighter-rouge">_handle_xxx</code> routines, take <code class="highlighter-rouge">_handle_WrTmp</code> as an example,</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _handle_WrTmp(self, stmt):
+    super()._handle_WrTmp(stmt)
+    self.state.kill_and_add_definition(Tmp(stmt.tmp), self._codeloc(), self.tmps[stmt.tmp])
+</code></pre></div></div>
+<p>After running the parent’s <code class="highlighter-rouge">_handle_WrTmp</code> function, <code class="highlighter-rouge">kill_and_add_definition</code> function is invoked, since “writing a new tmp” will absolutely generate a new definition, and whether some old definitions will be killed depends.</p>
+
+<p>As a totally static analysis, RDA traverses each VEX (valgrind IR) statements and stores their effects into <code class="highlighter-rouge">state</code>s. One other thing to mention, since angr works on VEX level, their atoms are different from those low-level assembly. If you want to know what an atom (in our case, <code class="highlighter-rouge">Tmp</code>), you need to check how those atoms are defined, let’s say <code class="highlighter-rouge">angr.analyses.reaching_definitions.atoms</code> module in RDA.</p>
+
+
+  </div><a class="u-url" href="/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Personal blog of Shuaike Dong</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Personal blog of Shuaike Dong</li><li><a class="u-email" href="mailto:dsk930817@gmail.com">dsk930817@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>A personal blog of my daily research life.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+	<!-- 数学公式 -->
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      inlineMath: [['$','$']]
+    }
+  });
+</script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware | Personal blog of Shuaike Dong</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it." />
+<meta property="og:description" content="Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it." />
+<link rel="canonical" href="/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html" />
+<meta property="og:url" content="/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html" />
+<meta property="og:site_name" content="Personal blog of Shuaike Dong" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-04-18T20:12:09+08:00" />
+<script type="application/ld+json">
+{"mainEntityOfPage":{"@type":"WebPage","@id":"/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html"},"@type":"BlogPosting","url":"/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html","headline":"[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware","dateModified":"2020-04-18T20:12:09+08:00","datePublished":"2020-04-18T20:12:09+08:00","description":"Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it.","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Personal blog of Shuaike Dong" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Personal blog of Shuaike Dong</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2020-04-18T20:12:09+08:00" itemprop="datePublished">Apr 18, 2020
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it.</p>
+
+<p>The paper is done by UCSB Sec-lab and Ruoyu Wang’s group at Arizona University named <strong>&lt;KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware&gt;</strong>. They proposed a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions.</p>
+
+<p>This matches the features of IoT devices very well, previous works mainly deal with single binary analysis like <a href="https://www.ndss-symposium.org/wp-content/uploads/2017/09/11_1_2.pdf">Firmalice</a> and <a href="https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-redini.pdf">BootStomp</a>. However, the interactions between multiple components are often ignored or just analyzed from the perspective of behavior instead of code itself, like <a href="https://web.cse.ohio-state.edu/~lin.3021/file/NDSS18b.pdf">IoTFuzzer</a>.</p>
+
+<p>The high-level idea of this paper is to apply <strong>taint analysis</strong> to multiple “connected” components and try to figure out the paths which contain insecure data flow. For example, the user sends a request to the webserver through the web interface(like 192.168.0.1), the server accepts the request and summons a local binary to accomplish the task.</p>
+
+<p>The overall structure of this approach is shown below.<img src="/images/Karonte.png" alt="Karonte.png" /></p>
+
+<h3 id="border-binaries-discovery">Border Binaries Discovery</h3>
+<p>After successfully unpacking the firmware, Karonte’s <strong>Border Binaries Discovery</strong> module searches for “border binaries” which <strong><em>exports the device functionality to the outside world</em></strong>. Those border binaries incorporate the logic necessary to <strong><em>accept user requests received from external sources</em></strong> and represent the point where attacker-controlled data is(maybe) introduced.</p>
+
+<p>The key component of Border Binaries Discovery Module is to recognize those “network-facing” binaries. The task is transformed into finding “network request parsing” functions. The authors combined metrics from previous works and proposed the following rules:</p>
+
+<ol>
+  <li>the number of basic blocks</li>
+  <li>the number of branches</li>
+  <li>the number of conditional statements used in conjunction with memory comparisons</li>
+  <li><strong><em>network mark</em></strong> (#net)</li>
+  <li><strong><em>connection mark</em></strong> (#conn)</li>
+</ol>
+
+<p>The “network mark” encodes the probability that a parsing function handles network messages. The idea is straight-forward, Karonte just locates those memory comparisons and infer the referenced string used to do the comparison. If the referenced string is in a preset list of <strong><em>network-encoding</em></strong> strings, #net increments by one.</p>
+
+<p>The “connection mark” indicates if any data read from a network socket is used in a memory comparison. #conn is increased by one if there exists a <strong>data-flow</strong> between a socket read and a memory comparison operation.</p>
+
+<p>Each binary has a <strong><em>parsing score</em></strong> indicating the possibility of whether it is a network-facing binary. After that, DBSCAN density-based clustering algorithm is used to get the candidates.</p>
+
+<h3 id="binary-dependency-graph-construction">Binary Dependency Graph Construction</h3>
+
+<p>Typical taint analyses diffuse tainted data along the control flow graph to find potentially vulnerable sinks. However, in the case of multiple-binary interaction, there is no control flow graph. Karonte tackles this problem by modeling the various <strong>inter-process communication paradigms</strong> through the use of a set of modules that we call <strong>Communication Paradigm Finders</strong>.</p>
+
+<p>The most common IPC paradigms used in firmware are as follows:</p>
+<ol>
+  <li>Files shared by the process.</li>
+  <li>Shared Memory. Shared memory can be either backed by a file on the file system, or be anonymous.</li>
+  <li>Environment Variables.</li>
+  <li>Sockets.</li>
+  <li>Command Line Arguments.</li>
+</ol>
+
+<p>Each instance of an IPC is identified by a unique key called <strong>data key</strong>.</p>
+
+<h4 id="communication-paradigm-finders">Communication Paradigm Finders</h4>
+
+<p>CPF is used to check whether a path contains the necessary code to share data through the communication paradigm that the CPF represents. If so, it uses the following functionalities to gather them.</p>
+
+<ol>
+  <li>Data Key Recovery. Which type of IPC the data key is of.</li>
+  <li>Flow Direction Determination. Whether the binary is a setter or a getter.</li>
+  <li>Binary Set magnification. Find other binaries that refer to any of the data keys previously identifies.</li>
+</ol>
+
+<h4 id="building-the-bdg">Building the BDG</h4>
+
+<p>Karonte models data dependencies among binaries through a disconnected cyclic diagram $G=(B,E)$. $B$ is the set of binaries and $E$ is the set of directed edges. Each directed edge is represented by a triplet $([b1, loc1, cp1], [b2, loc2, cp2], k)$ which means</p>
+<blockquote>
+  <p>the information associated with the data key k can flow from binary b1 at location loc1 via the communication paradigm cp1, to the binary b2 at location loc2 via the communication paradigm cp2.</p>
+
+</blockquote>
+
+<p>The detailed algorithm of generating BDG is shown as the image below
+<img src="/images/BDG_algorithm.png" alt="Screenshot from 2020-04-18 15-36-13.png" /></p>
+
+<p>To put it simply, I conclude the workflow of Karonte into following steps:</p>
+<ol>
+  <li>
+    <p>Use border binary discovery module to locate memory comparison locations.  After that, perform a symbolic path exploration from the start of that function to the location, taint the address of the buffer used in that memory comparison.</p>
+  </li>
+  <li>
+    <p>After locating those sources, Karonte performs a <strong>backward taint analysis</strong> and a <strong>forward taint analysis</strong>. The taint analysis is based on angr symbolic execution engine. During the taint analyses, CPFs of Karonte check each block if the binary is sharing some tainted data, records the data key and the role(setter or getter, propagating tainted data to other binaries or receiving tainted data). By determining the roles of binaries, edges can be added to BDG.</p>
+  </li>
+  <li>
+    <p>Each CPF of Karonte implements a member function <code class="highlighter-rouge">discover_new_binaries</code>, during the tainting analyses, new binaries that might communicate through the same channel (CP) will be added to the analysis queue.</p>
+  </li>
+</ol>
+
+<h3 id="insecure-interaction-detection">Insecure Interaction Detection</h3>
+
+<p>The Insecure Interaction Detection module finds two types of vulnerabilities:</p>
+<ol>
+  <li>memory-corruption bugs</li>
+  <li>denial of service</li>
+</ol>
+
+<p>For the first case, Karonte raises an alert when it finds the attacker-controlled data <strong>unsafely</strong> reaches a memcpy-like function. For the second, Karonte <strong>retrieves the conditions that control the iterations of a loop</strong>, if the conditions fully depend on attacker-controlled data, then raise an alert.</p>
+
+<p>As earlier saying, buffers referenced by memory comparisons are marked as tainted data and then propagated as the symbolic execution goes on. At each step of the symbolic execution, constraints to the buffer are recorded.</p>
+
+<p>Karonte refers to both <strong>memcpy-like</strong> functions and <strong>attacker-controlled loops</strong> as sinks. Once the tainted data reaches a sink during the symbolic execution, Karonte checks:</p>
+
+<ol>
+  <li>If the sink is a loop and one of its conditions completely relies on tainted variables. An alert is raised.</li>
+  <li>If the sink is a memcpy-like function, Karonte retrieves the address of the <strong>destination buffer</strong> and recovers its size. If the <strong>tainted buffer</strong> has a larger size (can be obtained from the collected constraints) than the destination buffer, raise an alert.</li>
+</ol>
+
+<h3 id="evaluations">Evaluations</h3>
+<p>Authors collected firmwares from three sources – current-version Linux-based firmware(#49), Firmware Blobs from previous work BootStomp(#5) and Firmadyne dataset (#899). The authors also claim they <strong>excluded</strong> MIPS-architecture firmware samples since the incomplete support of angr for MIPS. However, according to my observation, MIPS firmware takes up the most part of IoT markets.
+In a total, among 8565 considered binaries, 46 zero-day CVEs are found by Karonte, indicating the approach is effective.</p>
+
+
+  </div><a class="u-url" href="/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Personal blog of Shuaike Dong</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Personal blog of Shuaike Dong</li><li><a class="u-email" href="mailto:dsk930817@gmail.com">dsk930817@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>A personal blog of my daily research life.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

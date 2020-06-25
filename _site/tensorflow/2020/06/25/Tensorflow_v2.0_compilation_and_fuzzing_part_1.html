@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+	<!-- 数学公式 -->
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      inlineMath: [['$','$']]
+    }
+  });
+</script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>Tensorflow v2.0 compilation from source code and fuzzing (part 1) | Personal blog of Shuaike Dong</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="Tensorflow v2.0 compilation from source code and fuzzing (part 1)" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Recently I was working on a new project around deep learning framework fuzzing which seems very exciting. I choose Tensorflow as the target since its complexity and variety of components appear to be more vulnerable :-). [Tested build configurations ]: “https://www.tensorflow.org/install/source#linux “ [Protocol Buffers]:https://developers.google.com/protocol-buffers “Protocol Buffers “" />
+<meta property="og:description" content="Recently I was working on a new project around deep learning framework fuzzing which seems very exciting. I choose Tensorflow as the target since its complexity and variety of components appear to be more vulnerable :-). [Tested build configurations ]: “https://www.tensorflow.org/install/source#linux “ [Protocol Buffers]:https://developers.google.com/protocol-buffers “Protocol Buffers “" />
+<link rel="canonical" href="/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html" />
+<meta property="og:url" content="/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html" />
+<meta property="og:site_name" content="Personal blog of Shuaike Dong" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-06-25T22:18:09+08:00" />
+<script type="application/ld+json">
+{"mainEntityOfPage":{"@type":"WebPage","@id":"/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html"},"@type":"BlogPosting","url":"/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html","headline":"Tensorflow v2.0 compilation from source code and fuzzing (part 1)","dateModified":"2020-06-25T22:18:09+08:00","datePublished":"2020-06-25T22:18:09+08:00","description":"Recently I was working on a new project around deep learning framework fuzzing which seems very exciting. I choose Tensorflow as the target since its complexity and variety of components appear to be more vulnerable :-). [Tested build configurations ]: “https://www.tensorflow.org/install/source#linux “ [Protocol Buffers]:https://developers.google.com/protocol-buffers “Protocol Buffers “","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Personal blog of Shuaike Dong" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Personal blog of Shuaike Dong</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Tensorflow v2.0 compilation from source code and fuzzing (part 1)</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2020-06-25T22:18:09+08:00" itemprop="datePublished">Jun 25, 2020
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Recently I was working on a new project around <strong>deep learning framework fuzzing</strong> which seems very exciting. I choose <strong>Tensorflow</strong> as the target since its complexity and variety of components appear to be more <strong>vulnerable :-)</strong>.</p>
+
+<p>The figure below shows the whole architecture of Tensorflow. From it we know what we usually use in normal days are only a small part of the whole system (mainly <strong>Python client</strong>). To make the fuzzing deeper, I decide to target Tensorflow low-level functions, especially <strong>C APIs</strong> and those <strong>kernel implementations</strong>.</p>
+
+<p><img src="/images/Tensorflow.png" alt="img" /></p>
+
+<p>The first thing to do is compilation of source code, during which I can get familiar with overall structure of Tensorflow and learn how to play with its C-implemented interfaces. However, the journey  was not smooth.</p>
+
+<p>In this post I will record all “holes” I got stuck at and “ad hoc” way to solve them. I hope my solution can help those also compiling Tensorflow. Since I have <strong>no GPUs</strong> on my poor PC, I take the CPU-version instead and  unaware of GPU-related issues.</p>
+
+<h3 id="lets-start">Let’s start</h3>
+
+<h4 id="tested-build-configurations">Tested build configurations</h4>
+
+<p>[Tested build configurations ]: 	“https://www.tensorflow.org/install/source#linux “</p>
+
+<p>The first and most important reference I should mention is the tested build configuration page on Tensorflow’s official website. One of my bad experiences is to copy the procedures on a <code class="highlighter-rouge">gcc-7.5</code> PC to a <code class="highlighter-rouge">gcc-9.3</code> laptop.  You are recommended to make your environment consistent to ones tested by the official. For me, it is <code class="highlighter-rouge">bazel 0.26.1</code>+<code class="highlighter-rouge">Python 3.6</code> + <code class="highlighter-rouge">tensorflow 2.0.0</code>. (ubuntu 18.04)</p>
+
+<h4 id="bazel-workspacebzl-file">bazel workspace.bzl file</h4>
+
+<p>Google has changed its default building tool from cmake to their own <strong>bazel</strong>. I spent sometime getting familiarized with its syntax.  Each project built with bazel should have a file called <code class="highlighter-rouge">workspace.bzl</code> . Inside it listed <strong>how to acquire other projects’ sources.</strong>  Below I copies some code snippets of it, which are about the <code class="highlighter-rouge">eigen</code> library, a very famous C++ template library for linear algebra.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    <span class="n">tf_http_archive</span><span class="p">(</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s">"eigen_archive"</span><span class="p">,</span>
+        <span class="n">build_file</span> <span class="o">=</span> <span class="n">clean_dep</span><span class="p">(</span><span class="s">"//third_party:eigen.BUILD"</span><span class="p">),</span>
+        <span class="n">patch_file</span> <span class="o">=</span> <span class="n">clean_dep</span><span class="p">(</span><span class="s">"//third_party/eigen3:gpu_packet_math.patch"</span><span class="p">),</span>
+        <span class="n">sha256</span> <span class="o">=</span> <span class="s">"f3d69ac773ecaf3602cb940040390d4e71a501bb145ca9e01ce5464cf6d4eb68"</span><span class="p">,</span>
+        <span class="n">strip_prefix</span> <span class="o">=</span> <span class="s">"eigen-eigen-049af2f56331"</span><span class="p">,</span>
+        <span class="n">urls</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s">"https://storage.googleapis.com/mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz"</span><span class="p">,</span>
+            <span class="s">"https://bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+</code></pre></div></div>
+
+<p>Although there are materials saying <code class="highlighter-rouge">bazel build</code> will automatically install all needed external and third-party dependencies listed in <code class="highlighter-rouge">tensorflow/tensorflow/workspace.bzl</code>, I fail to reach that (due to the unfamiliarity with bazel I think). <strong>will update this part once I fix it.</strong></p>
+
+<h4 id="setup-before-bazel-building">Setup before bazel building</h4>
+
+<ol>
+  <li>
+    <p>Python and Tensorflow package dependencies.</p>
+
+    <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">sudo</span> <span class="n">apt</span> <span class="n">install</span> <span class="n">python</span><span class="o">-</span><span class="n">dev</span> <span class="n">python</span><span class="o">-</span><span class="n">pip</span> <span class="c1"># python3-dev and python3-pip
+</span><span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">U</span> <span class="o">--</span><span class="n">user</span> <span class="n">pip</span> <span class="n">six</span> <span class="n">numpy</span> <span class="n">wheel</span> <span class="n">setuptools</span> <span class="n">mock</span> <span class="s">'future&gt;=0.17.1'</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">U</span> <span class="o">--</span><span class="n">user</span> <span class="n">keras_applications</span> <span class="o">--</span><span class="n">no</span><span class="o">-</span><span class="n">deps</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">U</span> <span class="o">--</span><span class="n">user</span> <span class="n">keras_preprocessing</span> <span class="o">--</span><span class="n">no</span><span class="o">-</span><span class="n">deps</span>
+</code></pre></div>    </div>
+
+    <p>If you are careless and forgot to install <strong>keras*</strong> related dependencies above, you will get following errors when you are building python <code class="highlighter-rouge">.whl</code>  files (<code class="highlighter-rouge">bazel build //tensorflow/tools/pip_package:build_pip_package</code>).</p>
+
+    <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">ModuleNotFoundError</span><span class="p">:</span> <span class="n">No</span> <span class="n">module</span> <span class="n">named</span> <span class="s">'keras_preprocessing'</span>
+<span class="n">Target</span> <span class="o">//</span><span class="n">tensorflow</span><span class="o">/</span><span class="n">tools</span><span class="o">/</span><span class="n">pip_package</span><span class="p">:</span><span class="n">build_pip_package</span> <span class="n">failed</span> <span class="n">to</span> <span class="n">build</span>
+<span class="n">Use</span> <span class="o">--</span><span class="n">verbose_failures</span> <span class="n">to</span> <span class="n">see</span> <span class="n">the</span> <span class="n">command</span> <span class="n">lines</span> <span class="n">of</span> <span class="n">failed</span> <span class="n">build</span> <span class="n">steps</span>
+   
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>Google protocol buffers</p>
+
+    <p>are Google’s serializing libraries. It is widely-used in Tensorflow project due to its fascinating <strong>code generation</strong> feature. You have to install it before compiling Tensorflow. To notice, <strong>you’d better install the version listed in <code class="highlighter-rouge">workspace.bzl</code> file</strong> . For me, it is</p>
+
+    <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="n">PROTOBUF_URLS</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s">"https://storage.googleapis.com/mirror.tensorflow.org/github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz"</span><span class="p">,</span>
+        <span class="s">"https://github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz"</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="n">PROTOBUF_SHA256</span> <span class="o">=</span> <span class="s">"b9e92f9af8819bbbc514e2902aec860415b70209f31dfc8c4fa72515a5df9d59"</span>
+    <span class="n">PROTOBUF_STRIP_PREFIX</span> <span class="o">=</span> <span class="s">"protobuf-310ba5ee72661c081129eb878c1bbcec936b20f0"</span>
+</code></pre></div>    </div>
+
+    <p>Copy the URL and <code class="highlighter-rouge">wget</code> it, then follow the <code class="highlighter-rouge">ReadMe</code> file to install it to your system. Finally, the protobuf libraries will be installed to <code class="highlighter-rouge">/usr/local/lib</code>.</p>
+  </li>
+  <li>
+    <p>Eigen library</p>
+
+    <p>Different from protocol buffers, we don’t need to <code class="highlighter-rouge">make</code> and <code class="highlighter-rouge">make install</code> Eigen library. Just download the needed version and decompress it to a folder. Add the path involving <code class="highlighter-rouge">eigen3</code> to the environment variable <code class="highlighter-rouge">CPLUS_INCLUDE_PATH</code> like below:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">export </span><span class="nv">CPLUS_INCLUDE_PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/Tools/include/:</span><span class="nv">$CPLUS_INCLUDE_PATH</span><span class="s2">"</span>
+<span class="nb">export </span><span class="nv">CPLUS_INCLUDE_PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/Tools/include/eigen3/:</span><span class="nv">$CPLUS_INCLUDE_PATH</span><span class="s2">"</span>
+</code></pre></div>    </div>
+
+    <p>The structure of <code class="highlighter-rouge">eigen3</code> folder is like</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>➜  include <span class="nb">ls </span>eigen3           
+bench            COPYING.README        INSTALL
+blas             CTestConfig.cmake     lapack
+cmake            CTestCustom.cmake.in  README.md
+CMakeLists.txt   debug                 scripts
+COPYING.BSD      demos                 signature_of_eigen3_matrix_library
+COPYING.GPL      doc                   <span class="nb">test
+</span>COPYING.LGPL     Eigen                 unsupported
+COPYING.MINPACK  eigen3.pc.in
+COPYING.MPL2     failtest
+</code></pre></div>    </div>
+
+    <p>If you meet the error <code class="highlighter-rouge">... Partial template specialization is not more specialized thant primary template ...</code>, please take a look at the solution <a href="https://stackoverflow.com/questions/46356153/xcode-9-falls-to-build-partial-template-specialization-in-c/46382971">xcode 9 falls to build partial template specialization in c</a>. I tested the last answer manually and it worked.</p>
+
+    <p>To conclude, you should do following modifications (Assume you put eigen3 folder in <code class="highlighter-rouge">/usr/include</code>):</p>
+
+    <p>In the file <code class="highlighter-rouge">/usr/include/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorStorage.h</code>, change the old** style to <strong>new</strong> style:</p>
+
+    <p><strong>Old</strong>:</p>
+
+    <div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">template</span><span class="o">&lt;</span><span class="kr">typename</span> <span class="n">T</span><span class="p">,</span> <span class="kt">int</span> <span class="n">Options_</span><span class="p">,</span> <span class="kr">typename</span> <span class="n">FixedDimensions</span><span class="o">&gt;</span>
+<span class="n">class</span> <span class="n">TensorStorage</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span> <span class="n">FixedDimensions</span><span class="p">,</span> <span class="n">Options_</span><span class="o">&gt;</span>
+<span class="p">{</span>
+</code></pre></div>    </div>
+
+    <p><strong>New</strong>:</p>
+
+    <div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">template</span><span class="o">&lt;</span><span class="kr">typename</span> <span class="n">T</span><span class="p">,</span> <span class="kr">typename</span> <span class="n">FixedDimensions</span><span class="p">,</span> <span class="kt">int</span> <span class="n">Options_</span><span class="o">&gt;</span>      <span class="c1">// swap the templ params to match the declaration</span>
+<span class="n">class</span> <span class="n">TensorStorage</span>                                               <span class="c1">// drop the specialization (because it didn't!)</span>
+<span class="p">{</span>
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>abseil library</p>
+
+    <p>Another library you should involve is <a href="https://github.com/abseil/abseil-cpp">abseil-cpp</a> . <code class="highlighter-rouge">git clone</code> this project and put it under the root of Tensorflow (where you have another <code class="highlighter-rouge">tensorflow</code> subfolder, <code class="highlighter-rouge">third_party</code> and <code class="highlighter-rouge">tools</code>). Also note to add a soft link to it.</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span>git clone https://github.com/abseil/abseil-cpp.git
+<span class="nv">$ </span><span class="nb">ln</span> <span class="nt">-s</span> abseil-cpp/absl ./absl
+</code></pre></div>    </div>
+
+    <p>Without abseil library, you may meet the error saying something like <code class="highlighter-rouge">fatal error: absl/strings/string_view.h: No such file or directory</code>.</p>
+
+    <p>The solution is provided in the following thread:</p>
+
+    <p><a href="https://github.com/tensorflow/tensorflow/issues/22007">Newly included absl headers are missing from the include path</a></p>
+  </li>
+</ol>
+
+<h3 id="build-it">Build it!</h3>
+
+<p>To test C implementations in Tensorflow, we need to get some <strong>shared library files</strong>, in my case, <strong>tensorflow.so</strong>, <strong>tensorflow_cc.so</strong> and <strong>tensorflow_framework.so</strong>. All the descriptions of these three libraries are listed in <code class="highlighter-rouge">tensorflow/tensorflow/BUILD</code> file. Reading the <code class="highlighter-rouge">deps</code> part you will have a rough idea of what are those libraries for.</p>
+
+<p><code class="highlighter-rouge">libtensorflow.so</code>:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">tf_cc_shared_object</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s">"tensorflow"</span><span class="p">,</span>
+    <span class="n">linkopts</span> <span class="o">=</span> <span class="n">select</span><span class="p">({</span>
+        <span class="s">"//tensorflow:macos"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-Wl,-exported_symbols_list,$(location //tensorflow/c:exported_symbols.lds)"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s">"//tensorflow:windows"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">],</span>
+        <span class="s">"//conditions:default"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-z defs"</span><span class="p">,</span>
+            <span class="s">"-Wl,--version-script,$(location //tensorflow/c:version_script.lds)"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">}),</span>
+    <span class="n">per_os_targets</span> <span class="o">=</span> <span class="bp">True</span><span class="p">,</span>
+    <span class="n">soversion</span> <span class="o">=</span> <span class="n">VERSION</span><span class="p">,</span>
+    <span class="n">visibility</span> <span class="o">=</span> <span class="p">[</span><span class="s">"//visibility:public"</span><span class="p">],</span>
+    <span class="c1"># add win_def_file for tensorflow
+</span>    <span class="n">win_def_file</span> <span class="o">=</span> <span class="n">select</span><span class="p">({</span>
+        <span class="c1"># We need this DEF file to properly export symbols on Windows
+</span>        <span class="s">"//tensorflow:windows"</span><span class="p">:</span> <span class="s">":tensorflow_filtered_def_file"</span><span class="p">,</span>
+        <span class="s">"//conditions:default"</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span>
+    <span class="p">}),</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s">"//tensorflow/c:c_api"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c:c_api_experimental"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c:exported_symbols.lds"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c:version_script.lds"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c/eager:c_api"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:tensorflow"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core/distributed_runtime/rpc:grpc_session"</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">)</span>
+
+</code></pre></div></div>
+
+<p><code class="highlighter-rouge">libtensorflow_cc.so</code></p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">tf_cc_shared_object</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s">"tensorflow_cc"</span><span class="p">,</span>
+    <span class="n">linkopts</span> <span class="o">=</span> <span class="n">select</span><span class="p">({</span>
+        <span class="s">"//tensorflow:macos"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-Wl,-exported_symbols_list,$(location //tensorflow:tf_exported_symbols.lds)"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s">"//tensorflow:windows"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s">"//conditions:default"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-z defs"</span><span class="p">,</span>
+            <span class="s">"-Wl,--version-script,$(location //tensorflow:tf_version_script.lds)"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">}),</span>
+    <span class="n">per_os_targets</span> <span class="o">=</span> <span class="bp">True</span><span class="p">,</span>
+    <span class="n">soversion</span> <span class="o">=</span> <span class="n">VERSION</span><span class="p">,</span>
+    <span class="n">visibility</span> <span class="o">=</span> <span class="p">[</span><span class="s">"//visibility:public"</span><span class="p">],</span>
+    <span class="c1"># add win_def_file for tensorflow_cc
+</span>    <span class="n">win_def_file</span> <span class="o">=</span> <span class="n">select</span><span class="p">({</span>
+        <span class="c1"># We need this DEF file to properly export symbols on Windows
+</span>        <span class="s">"//tensorflow:windows"</span><span class="p">:</span> <span class="s">":tensorflow_filtered_def_file"</span><span class="p">,</span>
+        <span class="s">"//conditions:default"</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span>
+    <span class="p">}),</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s">"//tensorflow:tf_exported_symbols.lds"</span><span class="p">,</span>
+        <span class="s">"//tensorflow:tf_version_script.lds"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c:c_api"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/c/eager:c_api"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/cc:cc_ops"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/cc:client_session"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/cc:scope"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/cc/profiler"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:tensorflow"</span><span class="p">,</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="n">if_ngraph</span><span class="p">([</span><span class="s">"@ngraph_tf//:ngraph_tf"</span><span class="p">]),</span>
+<span class="p">)</span>
+
+</code></pre></div></div>
+
+<p><code class="highlighter-rouge">libtensorflow_framework.so</code></p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">tf_cc_shared_object</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s">"tensorflow_framework"</span><span class="p">,</span>
+    <span class="n">framework_so</span> <span class="o">=</span> <span class="p">[],</span>
+    <span class="n">linkopts</span> <span class="o">=</span> <span class="n">select</span><span class="p">({</span>
+        <span class="s">"//tensorflow:macos"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s">"//tensorflow:windows"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s">"//tensorflow:freebsd"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-Wl,--version-script,$(location //tensorflow:tf_framework_version_script.lds)"</span><span class="p">,</span>
+            <span class="s">"-lexecinfo"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s">"//conditions:default"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s">"-Wl,--version-script,$(location //tensorflow:tf_framework_version_script.lds)"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">}),</span>
+    <span class="n">linkstatic</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">per_os_targets</span> <span class="o">=</span> <span class="bp">True</span><span class="p">,</span>
+    <span class="n">soversion</span> <span class="o">=</span> <span class="n">VERSION</span><span class="p">,</span>
+    <span class="n">visibility</span> <span class="o">=</span> <span class="p">[</span><span class="s">"//visibility:public"</span><span class="p">],</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s">"//tensorflow/cc/saved_model:loader_lite_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:core_cpu_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:framework_internal_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:gpu_runtime_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/core:lib_internal_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow/stream_executor:stream_executor_impl"</span><span class="p">,</span>
+        <span class="s">"//tensorflow:tf_framework_version_script.lds"</span><span class="p">,</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="n">tf_additional_binary_deps</span><span class="p">(),</span>
+</code></pre></div></div>
+
+<p>The commands to build them three are :</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bazel build //tensorflow:tensorflow
+bazel build //tensorflow:tensorflow_cc
+bazel build //tensorflow:tensorflow_framework
+</code></pre></div></div>
+
+<p>After around 1~2 hours (depends on your hardware), you will get these three shared library objects in <code class="highlighter-rouge">tensorflow/bazel-bin/tensorflow</code>.</p>
+
+<h3 id="build-python-whl-binary">Build python <code class="highlighter-rouge">.whl</code> binary</h3>
+
+<p>If you want to compile the python interfaces as well, you need to run</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bazel build //tensorflow/tools/pip_package:build_pip_package
+<span class="c"># wait for its completion</span>
+./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
+</code></pre></div></div>
+
+<p>If everything is fine, you will find a <code class="highlighter-rouge">*.whl</code> file in <code class="highlighter-rouge">/tmp/tensorflow_pkg</code>. Use <code class="highlighter-rouge">pip install *.whl</code> to install it and enjoy.</p>
+
+<h3 id="other-weird-issues">Other weird issues</h3>
+
+<p>If you have managed the above, congratulations! Now you can link them and write your own C programs. However, when I “migrated” my above procedures to one of my laptops, I met other issues. I will list them by errors.</p>
+
+<ol>
+  <li>
+    <p>Check your GCC version</p>
+
+    <p>When I was running <code class="highlighter-rouge">bazel build //tensorflow/tools/pip_package:build_pip_package</code>, I got following errors:</p>
+
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ERROR: /home/dsk/Alipay/tensorflow/tensorflow/core/platform/BUILD:98:1: undeclared inclusion(s) in rule '//tensorflow/core/platform:cpu_info':
+   
+this rule is missing dependency declarations for the following files included by 'tensorflow/core/platform/cpu_info.cc':
+  'absl/base/log_severity.h'
+  'absl/base/attributes.h'
+  'absl/base/config.h'
+  'absl/base/options.h'
+  'absl/base/policy_checks.h'
+  'absl/strings/string_view.h'
+  'absl/base/internal/throw_delegate.h'
+  'absl/base/macros.h'
+  'absl/base/optimization.h'
+  'absl/base/port.h'
+Target //tensorflow/tools/pip_package:build_pip_package failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+   
+</code></pre></div>    </div>
+
+    <p>I spent a lot of time fixing this and finally find the <strong>inconsistent gcc(g++) version</strong> led to this. Then I downgraded gcc with following commands:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">sudo </span>apt-get <span class="nb">install</span> <span class="nt">-y</span> software-properties-common
+<span class="nb">sudo </span>add-apt-repository ppa:ubuntu-toolchain-r/test
+<span class="nb">sudo </span>apt update
+<span class="nb">sudo </span>apt <span class="nb">install </span>g++-7 <span class="nt">-y</span>
+<span class="nb">sudo </span>update-alternatives <span class="nt">--install</span> /usr/bin/gcc gcc /usr/bin/gcc-7 60 <span class="se">\</span>
+                         <span class="nt">--slave</span> /usr/bin/g++ g++ /usr/bin/g++-7 
+<span class="nb">sudo </span>update-alternatives <span class="nt">--config</span> gcc
+</code></pre></div>    </div>
+
+    <p>Also, don’t forget to put the new GCC’s <code class="highlighter-rouge">include</code> path to the environment variable</p>
+
+    <p>In your <code class="highlighter-rouge">~/.bashrc</code>, add the following:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">export </span><span class="nv">CPLUS_INCLUDE_PATH</span><span class="o">=</span><span class="s2">"/usr/lib/gcc/x86_64-linux-gnu/7/include/:</span><span class="nv">$CPLUS_INCLUDE_PATH</span><span class="s2">"</span>
+</code></pre></div>    </div>
+
+    <p>Now build again.</p>
+  </li>
+  <li>
+    <p>grpc issue</p>
+
+    <p>If you met the following error:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ERROR: /home/dsk/.cache/bazel/_bazel_dsk/34dcb22fe3c9a03150797364c441c079/external/grpc/BUILD:507:1: C++ compilation of rule <span class="s1">'@grpc//:gpr_base'</span> failed <span class="o">(</span>Exit 1<span class="o">)</span>
+external/grpc/src/core/lib/gpr/log_linux.cc:43:13: error: ambiguating new declaration of <span class="s1">'long int gettid()'</span>
+   43 | static long gettid<span class="o">(</span>void<span class="o">)</span> <span class="o">{</span> <span class="k">return </span>syscall<span class="o">(</span>__NR_gettid<span class="o">)</span><span class="p">;</span> <span class="o">}</span>
+</code></pre></div>    </div>
+
+    <p>Try the following solution, I got this from <a href="https://github.com/clearlinux/distribution/issues/1151">Build tensorflow error as “external/grpc/src/core/lib/gpr/log_linux.cc:43:13: error: ambiguating new declaration of ‘long int gettid()’”</a>.</p>
+
+    <p>Step 1.</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>tensorflow
+wget https://raw.githubusercontent.com/clearlinux-pkgs/tensorflow/master/Add-grpc-fix-for-gettid.patch
+patch <span class="nt">-p1</span> &lt;Add-grpc-fix-for-gettid.patch
+</code></pre></div>    </div>
+
+    <p>Step 2.</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>wget https://nomeroff.net.ua/tf/Rename-gettid-functions.patch
+<span class="nb">cp</span> ./Rename-gettid-functions.patch ./third_party/Rename-gettid-functions.patch
+</code></pre></div>    </div>
+
+    <h3 id="conclusion">Conclusion</h3>
+
+    <p>The compilation is not easy and I really think the introduction section on the Tensorflow official website is somewhat too abbreviate. I hope this post can help you and in the next post, I will introduce some of my practice of fuzzing Tensorflow source code.</p>
+  </li>
+</ol>
+
+
+  </div><a class="u-url" href="/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Personal blog of Shuaike Dong</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Personal blog of Shuaike Dong</li><li><a class="u-email" href="mailto:dsk930817@gmail.com">dsk930817@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>A personal blog of my daily research life.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

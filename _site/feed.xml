@@ -1,86 +1,960 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-03-17T11:14:18+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>A personal blog of my daily research life.</subtitle><entry><title type="html">The LD_PRELOAD usage in ctf</title><link href="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html" rel="alternate" type="text/html" title="The LD_PRELOAD usage in ctf" /><published>2020-03-16T13:56:45+08:00</published><updated>2020-03-16T13:56:45+08:00</updated><id>http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload</id><content type="html" xml:base="http://localhost:4000/ctf/binary/re/2020/03/16/ctf14-ldpreload.html">&lt;p&gt;Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of &lt;strong&gt;LD_PRELOAD&lt;/strong&gt;”&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="/feed.xml" rel="self" type="application/atom+xml" /><link href="/" rel="alternate" type="text/html" /><updated>2020-06-25T22:19:03+08:00</updated><id>/feed.xml</id><title type="html">Personal blog of Shuaike Dong</title><subtitle>A personal blog of my daily research life.</subtitle><entry><title type="html">Tensorflow v2.0 compilation from source code and fuzzing (part 1)</title><link href="/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html" rel="alternate" type="text/html" title="Tensorflow v2.0 compilation from source code and fuzzing (part 1)" /><published>2020-06-25T22:18:09+08:00</published><updated>2020-06-25T22:18:09+08:00</updated><id>/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1</id><content type="html" xml:base="/tensorflow/2020/06/25/Tensorflow_v2.0_compilation_and_fuzzing_part_1.html">&lt;p&gt;Recently I was working on a new project around &lt;strong&gt;deep learning framework fuzzing&lt;/strong&gt; which seems very exciting. I choose &lt;strong&gt;Tensorflow&lt;/strong&gt; as the target since its complexity and variety of components appear to be more &lt;strong&gt;vulnerable :-)&lt;/strong&gt;.&lt;/p&gt;
 
-&lt;p&gt;The problem is named &lt;strong&gt;&lt;em&gt;Hack In The Box Amsterdam: Bin 100&lt;/em&gt;&lt;/strong&gt; (2014), in which we are given a &lt;code class=&quot;highlighter-rouge&quot;&gt;elf&lt;/code&gt; binary called hitb_bin100.elf.&lt;/p&gt;
+&lt;p&gt;The figure below shows the whole architecture of Tensorflow. From it we know what we usually use in normal days are only a small part of the whole system (mainly &lt;strong&gt;Python client&lt;/strong&gt;). To make the fuzzing deeper, I decide to target Tensorflow low-level functions, especially &lt;strong&gt;C APIs&lt;/strong&gt; and those &lt;strong&gt;kernel implementations&lt;/strong&gt;.&lt;/p&gt;
 
-&lt;p&gt;First let’s &lt;code class=&quot;highlighter-rouge&quot;&gt;file&lt;/code&gt; it to see the basic information.
-&lt;img src=&quot;/images/20200311-114439.png&quot; alt=&quot;&quot; /&gt;
-As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;/images/Tensorflow.png&quot; alt=&quot;img&quot; /&gt;&lt;/p&gt;
 
-&lt;p&gt;Now run it &lt;code class=&quot;highlighter-rouge&quot;&gt;chmod +x ./hitb-bin100.elf &amp;amp;&amp;amp; ./hitb-bin100.elf&lt;/code&gt;.
-&lt;img src=&quot;/images/20200311-114647.png&quot; alt=&quot;&quot; /&gt;
-As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
+&lt;p&gt;The first thing to do is compilation of source code, during which I can get familiar with overall structure of Tensorflow and learn how to play with its C-implemented interfaces. However, the journey  was not smooth.&lt;/p&gt;
 
-&lt;p&gt;Now run it &lt;code class=&quot;highlighter-rouge&quot;&gt;chmod +x ./hitb-bin100.elf &amp;amp;&amp;amp; ./hitb-bin100.elf&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;In this post I will record all “holes” I got stuck at and “ad hoc” way to solve them. I hope my solution can help those also compiling Tensorflow. Since I have &lt;strong&gt;no GPUs&lt;/strong&gt; on my poor PC, I take the CPU-version instead and  unaware of GPU-related issues.&lt;/p&gt;
 
-&lt;p&gt;The binary keeps printing out random lyrics with an around one-second time gap in between.&lt;/p&gt;
+&lt;h3 id=&quot;lets-start&quot;&gt;Let’s start&lt;/h3&gt;
 
-&lt;p&gt;I then dragged it into ida-pro to see what’s inside.&lt;img src=&quot;/images/20200311-114836.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;h4 id=&quot;tested-build-configurations&quot;&gt;Tested build configurations&lt;/h4&gt;
 
-&lt;p&gt;The control flow graph seems normal with two obvious loop structures (red and blue).&lt;/p&gt;
+&lt;p&gt;[Tested build configurations ]: 	“https://www.tensorflow.org/install/source#linux “&lt;/p&gt;
 
-&lt;p&gt;Following the control flow I found a basic block(actually not a real basic block, it’s just a unit block in ida super control flow graphs). 
-&lt;img src=&quot;/images/20200311-115032.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;The first and most important reference I should mention is the tested build configuration page on Tensorflow’s official website. One of my bad experiences is to copy the procedures on a &lt;code class=&quot;highlighter-rouge&quot;&gt;gcc-7.5&lt;/code&gt; PC to a &lt;code class=&quot;highlighter-rouge&quot;&gt;gcc-9.3&lt;/code&gt; laptop.  You are recommended to make your environment consistent to ones tested by the official. For me, it is &lt;code class=&quot;highlighter-rouge&quot;&gt;bazel 0.26.1&lt;/code&gt;+&lt;code class=&quot;highlighter-rouge&quot;&gt;Python 3.6&lt;/code&gt; + &lt;code class=&quot;highlighter-rouge&quot;&gt;tensorflow 2.0.0&lt;/code&gt;. (ubuntu 18.04)&lt;/p&gt;
 
-&lt;p&gt;This piece of code make me review how arguments are passed in x64 assembly:&lt;/p&gt;
+&lt;h4 id=&quot;bazel-workspacebzl-file&quot;&gt;bazel workspace.bzl file&lt;/h4&gt;
 
-&lt;blockquote&gt;
-  &lt;p&gt;Generally when there are fewer than &lt;strong&gt;7&lt;/strong&gt; arguments we will store them into registers: &lt;strong&gt;rdi, rsi, rdx, rcx, r8, and r9&lt;/strong&gt; from &lt;strong&gt;left&lt;/strong&gt; to the &lt;strong&gt;right&lt;/strong&gt;. While when the number of arguments is larger thant 7, those extra arguments are &lt;strong&gt;pushed into the stack&lt;/strong&gt; from &lt;strong&gt;right&lt;/strong&gt; to &lt;strong&gt;left&lt;/strong&gt;, which stays the same as x86 assembly.&lt;/p&gt;
-&lt;/blockquote&gt;
+&lt;p&gt;Google has changed its default building tool from cmake to their own &lt;strong&gt;bazel&lt;/strong&gt;. I spent sometime getting familiarized with its syntax.  Each project built with bazel should have a file called &lt;code class=&quot;highlighter-rouge&quot;&gt;workspace.bzl&lt;/code&gt; . Inside it listed &lt;strong&gt;how to acquire other projects’ sources.&lt;/strong&gt;  Below I copies some code snippets of it, which are about the &lt;code class=&quot;highlighter-rouge&quot;&gt;eigen&lt;/code&gt; library, a very famous C++ template library for linear algebra.&lt;/p&gt;
 
-&lt;blockquote&gt;
-  &lt;p&gt;Apart from that, the return value of a function is first passed to &lt;strong&gt;rax&lt;/strong&gt;. If there is a second return value, it will be passed to &lt;strong&gt;rdx&lt;/strong&gt;.&lt;/p&gt;
-&lt;/blockquote&gt;
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    &lt;span class=&quot;n&quot;&gt;tf_http_archive&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;eigen_archive&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;build_file&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;clean_dep&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;//third_party:eigen.BUILD&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;patch_file&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;clean_dep&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;//third_party/eigen3:gpu_packet_math.patch&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;sha256&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;f3d69ac773ecaf3602cb940040390d4e71a501bb145ca9e01ce5464cf6d4eb68&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;strip_prefix&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;eigen-eigen-049af2f56331&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;urls&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;https://storage.googleapis.com/mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;https://bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;OK, now let’s see what does this code block do by translating it into the C code.&lt;/p&gt;
+&lt;p&gt;Although there are materials saying &lt;code class=&quot;highlighter-rouge&quot;&gt;bazel build&lt;/code&gt; will automatically install all needed external and third-party dependencies listed in &lt;code class=&quot;highlighter-rouge&quot;&gt;tensorflow/tensorflow/workspace.bzl&lt;/code&gt;, I fail to reach that (due to the unfamiliarity with bazel I think). &lt;strong&gt;will update this part once I fix it.&lt;/strong&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;setup-before-bazel-building&quot;&gt;Setup before bazel building&lt;/h4&gt;
 
 &lt;ol&gt;
-  &lt;li&gt;The prototype of &lt;code class=&quot;highlighter-rouge&quot;&gt;time()&lt;/code&gt; in C is &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t time (time_t* timer)&lt;/code&gt;, it will return the current time information in a &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t&lt;/code&gt; struct object.&lt;/li&gt;
-  &lt;li&gt;After that, the address of that  &lt;code class=&quot;highlighter-rouge&quot;&gt;time_t&lt;/code&gt; object is  passed to &lt;code class=&quot;highlighter-rouge&quot;&gt;srand&lt;/code&gt; as the argument. The &lt;code class=&quot;highlighter-rouge&quot;&gt;srand()&lt;/code&gt; function is to initialize the psedu-random number generator with the current time info.&lt;/li&gt;
-  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;rand()&lt;/code&gt; function executes, producing a psedu-random number and stores it in register &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt;. (Note that &lt;code class=&quot;highlighter-rouge&quot;&gt;d&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; refers to &lt;code class=&quot;highlighter-rouge&quot;&gt;double-word&lt;/code&gt; which means &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; has the size of 32 bits.)&lt;/li&gt;
-  &lt;li&gt;The value of &lt;code class=&quot;highlighter-rouge&quot;&gt;r13d&lt;/code&gt; is stored to &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+rbx+198h+var_188]&lt;/code&gt; and then the lyric with the offset &lt;code class=&quot;highlighter-rouge&quot;&gt;[rbx*8]&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;funny&lt;/code&gt; variable is fetched and stored into &lt;code class=&quot;highlighter-rouge&quot;&gt;r13&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Python and Tensorflow package dependencies.&lt;/p&gt;
+
+    &lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;sudo&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;apt&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;install&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;python&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dev&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;python&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pip&lt;/span&gt; &lt;span class=&quot;c1&quot;&gt;# python3-dev and python3-pip
+&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pip&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;install&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;U&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;user&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;pip&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;six&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numpy&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;wheel&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;setuptools&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mock&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;'future&amp;gt;=0.17.1'&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;pip&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;install&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;U&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;user&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;keras_applications&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;no&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;deps&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;pip&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;install&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;U&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;user&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;keras_preprocessing&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;no&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;deps&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;If you are careless and forgot to install &lt;strong&gt;keras*&lt;/strong&gt; related dependencies above, you will get following errors when you are building python &lt;code class=&quot;highlighter-rouge&quot;&gt;.whl&lt;/code&gt;  files (&lt;code class=&quot;highlighter-rouge&quot;&gt;bazel build //tensorflow/tools/pip_package:build_pip_package&lt;/code&gt;).&lt;/p&gt;
+
+    &lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;ModuleNotFoundError&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;No&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;module&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;named&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;'keras_preprocessing'&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;Target&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;//&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tensorflow&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;/&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tools&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;/&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pip_package&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;build_pip_package&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;failed&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;to&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;build&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;Use&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;verbose_failures&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;to&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;see&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;the&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;command&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;lines&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;of&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;failed&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;build&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;steps&lt;/span&gt;
+   
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Google protocol buffers&lt;/p&gt;
+
+    &lt;p&gt;are Google’s serializing libraries. It is widely-used in Tensorflow project due to its fascinating &lt;strong&gt;code generation&lt;/strong&gt; feature. You have to install it before compiling Tensorflow. To notice, &lt;strong&gt;you’d better install the version listed in &lt;code class=&quot;highlighter-rouge&quot;&gt;workspace.bzl&lt;/code&gt; file&lt;/strong&gt; . For me, it is&lt;/p&gt;
+
+    &lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; &lt;span class=&quot;n&quot;&gt;PROTOBUF_URLS&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;https://storage.googleapis.com/mirror.tensorflow.org/github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;https://github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;PROTOBUF_SHA256&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;b9e92f9af8819bbbc514e2902aec860415b70209f31dfc8c4fa72515a5df9d59&quot;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;PROTOBUF_STRIP_PREFIX&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;protobuf-310ba5ee72661c081129eb878c1bbcec936b20f0&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Copy the URL and &lt;code class=&quot;highlighter-rouge&quot;&gt;wget&lt;/code&gt; it, then follow the &lt;code class=&quot;highlighter-rouge&quot;&gt;ReadMe&lt;/code&gt; file to install it to your system. Finally, the protobuf libraries will be installed to &lt;code class=&quot;highlighter-rouge&quot;&gt;/usr/local/lib&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Eigen library&lt;/p&gt;
+
+    &lt;p&gt;Different from protocol buffers, we don’t need to &lt;code class=&quot;highlighter-rouge&quot;&gt;make&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;make install&lt;/code&gt; Eigen library. Just download the needed version and decompress it to a folder. Add the path involving &lt;code class=&quot;highlighter-rouge&quot;&gt;eigen3&lt;/code&gt; to the environment variable &lt;code class=&quot;highlighter-rouge&quot;&gt;CPLUS_INCLUDE_PATH&lt;/code&gt; like below:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;export &lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$HOME&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;/Tools/include/:&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;
+&lt;span class=&quot;nb&quot;&gt;export &lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$HOME&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;/Tools/include/eigen3/:&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;The structure of &lt;code class=&quot;highlighter-rouge&quot;&gt;eigen3&lt;/code&gt; folder is like&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;➜  include &lt;span class=&quot;nb&quot;&gt;ls &lt;/span&gt;eigen3           
+bench            COPYING.README        INSTALL
+blas             CTestConfig.cmake     lapack
+cmake            CTestCustom.cmake.in  README.md
+CMakeLists.txt   debug                 scripts
+COPYING.BSD      demos                 signature_of_eigen3_matrix_library
+COPYING.GPL      doc                   &lt;span class=&quot;nb&quot;&gt;test
+&lt;/span&gt;COPYING.LGPL     Eigen                 unsupported
+COPYING.MINPACK  eigen3.pc.in
+COPYING.MPL2     failtest
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;If you meet the error &lt;code class=&quot;highlighter-rouge&quot;&gt;... Partial template specialization is not more specialized thant primary template ...&lt;/code&gt;, please take a look at the solution &lt;a href=&quot;https://stackoverflow.com/questions/46356153/xcode-9-falls-to-build-partial-template-specialization-in-c/46382971&quot;&gt;xcode 9 falls to build partial template specialization in c&lt;/a&gt;. I tested the last answer manually and it worked.&lt;/p&gt;
+
+    &lt;p&gt;To conclude, you should do following modifications (Assume you put eigen3 folder in &lt;code class=&quot;highlighter-rouge&quot;&gt;/usr/include&lt;/code&gt;):&lt;/p&gt;
+
+    &lt;p&gt;In the file &lt;code class=&quot;highlighter-rouge&quot;&gt;/usr/include/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorStorage.h&lt;/code&gt;, change the old** style to &lt;strong&gt;new&lt;/strong&gt; style:&lt;/p&gt;
+
+    &lt;p&gt;&lt;strong&gt;Old&lt;/strong&gt;:&lt;/p&gt;
+
+    &lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;template&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kr&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Options_&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kr&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;FixedDimensions&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;TensorStorage&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;FixedDimensions&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Options_&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;&lt;strong&gt;New&lt;/strong&gt;:&lt;/p&gt;
+
+    &lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;template&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kr&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;T&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kr&quot;&gt;typename&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;FixedDimensions&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Options_&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt;      &lt;span class=&quot;c1&quot;&gt;// swap the templ params to match the declaration&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;TensorStorage&lt;/span&gt;                                               &lt;span class=&quot;c1&quot;&gt;// drop the specialization (because it didn't!)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;abseil library&lt;/p&gt;
+
+    &lt;p&gt;Another library you should involve is &lt;a href=&quot;https://github.com/abseil/abseil-cpp&quot;&gt;abseil-cpp&lt;/a&gt; . &lt;code class=&quot;highlighter-rouge&quot;&gt;git clone&lt;/code&gt; this project and put it under the root of Tensorflow (where you have another &lt;code class=&quot;highlighter-rouge&quot;&gt;tensorflow&lt;/code&gt; subfolder, &lt;code class=&quot;highlighter-rouge&quot;&gt;third_party&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;tools&lt;/code&gt;). Also note to add a soft link to it.&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;git clone https://github.com/abseil/abseil-cpp.git
+&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;ln&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-s&lt;/span&gt; abseil-cpp/absl ./absl
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Without abseil library, you may meet the error saying something like &lt;code class=&quot;highlighter-rouge&quot;&gt;fatal error: absl/strings/string_view.h: No such file or directory&lt;/code&gt;.&lt;/p&gt;
+
+    &lt;p&gt;The solution is provided in the following thread:&lt;/p&gt;
+
+    &lt;p&gt;&lt;a href=&quot;https://github.com/tensorflow/tensorflow/issues/22007&quot;&gt;Newly included absl headers are missing from the include path&lt;/a&gt;&lt;/p&gt;
+  &lt;/li&gt;
 &lt;/ol&gt;
 
-&lt;p&gt;Now let’s move to the next code block.
-&lt;img src=&quot;/images/20200311-123753.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;h3 id=&quot;build-it&quot;&gt;Build it!&lt;/h3&gt;
 
-&lt;p&gt;Inside it we find there is a string searching operation done by &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;. For &lt;code class=&quot;highlighter-rouge&quot;&gt;repne scasb&lt;/code&gt;, we just search &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; in target string &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsi:rdi]&lt;/code&gt;. In this case, &lt;code class=&quot;highlighter-rouge&quot;&gt;eax&lt;/code&gt; is zero and therefore the code snippet is actually looking for the end of a C string. &lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; keeps the number of attempts to do the search, which is the length of the target string.&lt;/p&gt;
+&lt;p&gt;To test C implementations in Tensorflow, we need to get some &lt;strong&gt;shared library files&lt;/strong&gt;, in my case, &lt;strong&gt;tensorflow.so&lt;/strong&gt;, &lt;strong&gt;tensorflow_cc.so&lt;/strong&gt; and &lt;strong&gt;tensorflow_framework.so&lt;/strong&gt;. All the descriptions of these three libraries are listed in &lt;code class=&quot;highlighter-rouge&quot;&gt;tensorflow/tensorflow/BUILD&lt;/code&gt; file. Reading the &lt;code class=&quot;highlighter-rouge&quot;&gt;deps&lt;/code&gt; part you will have a rough idea of what are those libraries for.&lt;/p&gt;
 
-&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;rcx&lt;/code&gt; is then compared with &lt;code class=&quot;highlighter-rouge&quot;&gt;r12&lt;/code&gt; which has been &lt;code class=&quot;highlighter-rouge&quot;&gt;xor&lt;/code&gt;ed to zero in the previous block. Let’s see what if the string being scanned is not zero length.&lt;/p&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;libtensorflow.so&lt;/code&gt;:&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;tf_cc_shared_object&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;tensorflow&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;linkopts&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;select&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;({&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:macos&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,-exported_symbols_list,$(location //tensorflow/c:exported_symbols.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:windows&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//conditions:default&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-z defs&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,--version-script,$(location //tensorflow/c:version_script.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}),&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;per_os_targets&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;soversion&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;VERSION&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;visibility&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;//visibility:public&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;# add win_def_file for tensorflow
+&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;win_def_file&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;select&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;({&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;# We need this DEF file to properly export symbols on Windows
+&lt;/span&gt;        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:windows&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tensorflow_filtered_def_file&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//conditions:default&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;None&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}),&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;deps&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c:c_api&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c:c_api_experimental&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c:exported_symbols.lds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c:version_script.lds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c/eager:c_api&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:tensorflow&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core/distributed_runtime/rpc:grpc_session&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
 
-&lt;p&gt;If the string length is not zero, the string will be output by &lt;code class=&quot;highlighter-rouge&quot;&gt;printf_chk&lt;/code&gt; and then the machine will &lt;strong&gt;sleep&lt;/strong&gt; for one second.&lt;/p&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-124917.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;libtensorflow_cc.so&lt;/code&gt;&lt;/p&gt;
 
-&lt;p&gt;And until &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt; is decreased to zero, will we jump to the final treasure target:&lt;/p&gt;
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;tf_cc_shared_object&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;tensorflow_cc&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;linkopts&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;select&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;({&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:macos&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,-exported_symbols_list,$(location //tensorflow:tf_exported_symbols.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:windows&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//conditions:default&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-z defs&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,--version-script,$(location //tensorflow:tf_version_script.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}),&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;per_os_targets&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;soversion&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;VERSION&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;visibility&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;//visibility:public&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;# add win_def_file for tensorflow_cc
+&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;win_def_file&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;select&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;({&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;# We need this DEF file to properly export symbols on Windows
+&lt;/span&gt;        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:windows&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tensorflow_filtered_def_file&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//conditions:default&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;None&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}),&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;deps&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:tf_exported_symbols.lds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:tf_version_script.lds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c:c_api&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/c/eager:c_api&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/cc:cc_ops&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/cc:client_session&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/cc:scope&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/cc/profiler&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:tensorflow&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;if_ngraph&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;([&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;@ngraph_tf//:ngraph_tf&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]),&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-125010.png&quot; alt=&quot;&quot; /&gt;
-&lt;img src=&quot;/images/20200311-124748.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;If the string length is not zero, the string will be output by &lt;code class=&quot;highlighter-rouge&quot;&gt;printf_chk&lt;/code&gt; and then the machine will &lt;strong&gt;sleep&lt;/strong&gt; for one second.&lt;/p&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;libtensorflow_framework.so&lt;/code&gt;&lt;/p&gt;
 
-&lt;p&gt;And until &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt; is decreased to zero, will we jump to the final treasure target:&lt;/p&gt;
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;tf_cc_shared_object&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;tensorflow_framework&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;framework_so&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[],&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;linkopts&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;select&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;({&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:macos&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:windows&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:freebsd&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,--version-script,$(location //tensorflow:tf_framework_version_script.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-lexecinfo&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//conditions:default&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;s&quot;&gt;&quot;-Wl,--version-script,$(location //tensorflow:tf_framework_version_script.lds)&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}),&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;linkstatic&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;per_os_targets&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;soversion&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;VERSION&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;visibility&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;//visibility:public&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;],&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;deps&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/cc/saved_model:loader_lite_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:core_cpu_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:framework_internal_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:gpu_runtime_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/core:lib_internal_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow/stream_executor:stream_executor_impl&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+        &lt;span class=&quot;s&quot;&gt;&quot;//tensorflow:tf_framework_version_script.lds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;tf_additional_binary_deps&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(),&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;There we output the value of the key.&lt;/p&gt;
+&lt;p&gt;The commands to build them three are :&lt;/p&gt;
 
-&lt;p&gt;Where do we set the value of &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198+var_190]&lt;/code&gt;?
-&lt;img src=&quot;/images/20200311-125140.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;bazel build //tensorflow:tensorflow
+bazel build //tensorflow:tensorflow_cc
+bazel build //tensorflow:tensorflow_framework
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;At this step, we have the intuition of capturing the flag – Just accelerating the loops, so that 31337 can be more quickly deduced to zero.&lt;/p&gt;
+&lt;p&gt;After around 1~2 hours (depends on your hardware), you will get these three shared library objects in &lt;code class=&quot;highlighter-rouge&quot;&gt;tensorflow/bazel-bin/tensorflow&lt;/code&gt;.&lt;/p&gt;
 
-&lt;p&gt;The first idea is to bypass all the loops and directly run the block 0x4007e8. However, this cannot work, since the key value is fetched from &lt;code class=&quot;highlighter-rouge&quot;&gt;[rsp+198h+var_188]&lt;/code&gt;, which is generated by &lt;code class=&quot;highlighter-rouge&quot;&gt;rand&lt;/code&gt; function byte-by-byte during the big loop.&lt;/p&gt;
+&lt;h3 id=&quot;build-python-whl-binary&quot;&gt;Build python &lt;code class=&quot;highlighter-rouge&quot;&gt;.whl&lt;/code&gt; binary&lt;/h3&gt;
 
-&lt;p&gt;&lt;strong&gt;Note&lt;/strong&gt;: As the below image shows, the value of the key is generated byte by byte during the loop. Since the initial seed of the &lt;code class=&quot;highlighter-rouge&quot;&gt;rand&lt;/code&gt; is always the same whenever you run the program (the result &lt;code class=&quot;highlighter-rouge&quot;&gt;lea edi, [rbp+rax+0]&lt;/code&gt; will be the same)&lt;/p&gt;
+&lt;p&gt;If you want to compile the python interfaces as well, you need to run&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/images/20200311-131024.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;bazel build //tensorflow/tools/pip_package:build_pip_package
+&lt;span class=&quot;c&quot;&gt;# wait for its completion&lt;/span&gt;
+./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;Now comes to the second idea, we change the &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(1)&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep(0)&lt;/code&gt;. Does it work?&lt;/p&gt;
+&lt;p&gt;If everything is fine, you will find a &lt;code class=&quot;highlighter-rouge&quot;&gt;*.whl&lt;/code&gt; file in &lt;code class=&quot;highlighter-rouge&quot;&gt;/tmp/tensorflow_pkg&lt;/code&gt;. Use &lt;code class=&quot;highlighter-rouge&quot;&gt;pip install *.whl&lt;/code&gt; to install it and enjoy.&lt;/p&gt;
 
-&lt;p&gt;No. The result is like below.
-&lt;img src=&quot;/images/20200311-143849.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;h3 id=&quot;other-weird-issues&quot;&gt;Other weird issues&lt;/h3&gt;
 
-&lt;p&gt;Why &lt;code class=&quot;highlighter-rouge&quot;&gt;sleep()&lt;/code&gt; matters a lot?&lt;/p&gt;</content><author><name></name></author><summary type="html">Recently I was thinking how to make my reverse engineering skills stronger so that I can perform better in an interview, I decided to start working on CTF challenges during which I can review some basic background and learn some fancy operations. The first day I selected one problem featured “usage of LD_PRELOAD”</summary></entry><entry><title type="html">Welcome to Jekyll!</title><link href="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html" rel="alternate" type="text/html" title="Welcome to Jekyll!" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll</id><content type="html" xml:base="http://localhost:4000/jekyll/update/2020/03/09/welcome-to-jekyll.html">&lt;p&gt;You’ll find this post in your &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll serve&lt;/code&gt;, which launches a web server and auto-regenerates your site when a file is updated.&lt;/p&gt;
+&lt;p&gt;If you have managed the above, congratulations! Now you can link them and write your own C programs. However, when I “migrated” my above procedures to one of my laptops, I met other issues. I will list them by errors.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;Check your GCC version&lt;/p&gt;
+
+    &lt;p&gt;When I was running &lt;code class=&quot;highlighter-rouge&quot;&gt;bazel build //tensorflow/tools/pip_package:build_pip_package&lt;/code&gt;, I got following errors:&lt;/p&gt;
+
+    &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ERROR: /home/dsk/Alipay/tensorflow/tensorflow/core/platform/BUILD:98:1: undeclared inclusion(s) in rule '//tensorflow/core/platform:cpu_info':
+   
+this rule is missing dependency declarations for the following files included by 'tensorflow/core/platform/cpu_info.cc':
+  'absl/base/log_severity.h'
+  'absl/base/attributes.h'
+  'absl/base/config.h'
+  'absl/base/options.h'
+  'absl/base/policy_checks.h'
+  'absl/strings/string_view.h'
+  'absl/base/internal/throw_delegate.h'
+  'absl/base/macros.h'
+  'absl/base/optimization.h'
+  'absl/base/port.h'
+Target //tensorflow/tools/pip_package:build_pip_package failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+   
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;I spent a lot of time fixing this and finally find the &lt;strong&gt;inconsistent gcc(g++) version&lt;/strong&gt; led to this. Then I downgraded gcc with following commands:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;apt-get &lt;span class=&quot;nb&quot;&gt;install&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-y&lt;/span&gt; software-properties-common
+&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;add-apt-repository ppa:ubuntu-toolchain-r/test
+&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;apt update
+&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;apt &lt;span class=&quot;nb&quot;&gt;install &lt;/span&gt;g++-7 &lt;span class=&quot;nt&quot;&gt;-y&lt;/span&gt;
+&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;update-alternatives &lt;span class=&quot;nt&quot;&gt;--install&lt;/span&gt; /usr/bin/gcc gcc /usr/bin/gcc-7 60 &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+                         &lt;span class=&quot;nt&quot;&gt;--slave&lt;/span&gt; /usr/bin/g++ g++ /usr/bin/g++-7 
+&lt;span class=&quot;nb&quot;&gt;sudo &lt;/span&gt;update-alternatives &lt;span class=&quot;nt&quot;&gt;--config&lt;/span&gt; gcc
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Also, don’t forget to put the new GCC’s &lt;code class=&quot;highlighter-rouge&quot;&gt;include&lt;/code&gt; path to the environment variable&lt;/p&gt;
+
+    &lt;p&gt;In your &lt;code class=&quot;highlighter-rouge&quot;&gt;~/.bashrc&lt;/code&gt;, add the following:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;export &lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;/usr/lib/gcc/x86_64-linux-gnu/7/include/:&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$CPLUS_INCLUDE_PATH&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Now build again.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;grpc issue&lt;/p&gt;
+
+    &lt;p&gt;If you met the following error:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ERROR: /home/dsk/.cache/bazel/_bazel_dsk/34dcb22fe3c9a03150797364c441c079/external/grpc/BUILD:507:1: C++ compilation of rule &lt;span class=&quot;s1&quot;&gt;'@grpc//:gpr_base'&lt;/span&gt; failed &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;Exit 1&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+external/grpc/src/core/lib/gpr/log_linux.cc:43:13: error: ambiguating new declaration of &lt;span class=&quot;s1&quot;&gt;'long int gettid()'&lt;/span&gt;
+   43 | static long gettid&lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;void&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;return &lt;/span&gt;syscall&lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;__NR_gettid&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Try the following solution, I got this from &lt;a href=&quot;https://github.com/clearlinux/distribution/issues/1151&quot;&gt;Build tensorflow error as “external/grpc/src/core/lib/gpr/log_linux.cc:43:13: error: ambiguating new declaration of ‘long int gettid()’”&lt;/a&gt;.&lt;/p&gt;
+
+    &lt;p&gt;Step 1.&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;cd &lt;/span&gt;tensorflow
+wget https://raw.githubusercontent.com/clearlinux-pkgs/tensorflow/master/Add-grpc-fix-for-gettid.patch
+patch &lt;span class=&quot;nt&quot;&gt;-p1&lt;/span&gt; &amp;lt;Add-grpc-fix-for-gettid.patch
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Step 2.&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;wget https://nomeroff.net.ua/tf/Rename-gettid-functions.patch
+&lt;span class=&quot;nb&quot;&gt;cp&lt;/span&gt; ./Rename-gettid-functions.patch ./third_party/Rename-gettid-functions.patch
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;h3 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h3&gt;
+
+    &lt;p&gt;The compilation is not easy and I really think the introduction section on the Tensorflow official website is somewhat too abbreviate. I hope this post can help you and in the next post, I will introduce some of my practice of fuzzing Tensorflow source code.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;</content><author><name></name></author><summary type="html">Recently I was working on a new project around deep learning framework fuzzing which seems very exciting. I choose Tensorflow as the target since its complexity and variety of components appear to be more vulnerable :-). [Tested build configurations ]: “https://www.tensorflow.org/install/source#linux “ [Protocol Buffers]:https://developers.google.com/protocol-buffers “Protocol Buffers “</summary></entry><entry><title type="html">[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware</title><link href="/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html" rel="alternate" type="text/html" title="[Paper Reading] Karonte: Detecting Insecure Multi-binary Interactions in Embedded Firmware" /><published>2020-04-18T20:12:09+08:00</published><updated>2020-04-18T20:12:09+08:00</updated><id>/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware</id><content type="html" xml:base="/paper/2020/04/18/Karonte_Detecting_Insecure_Multibinary_Interactions_in_Embedded_Firmware.html">&lt;p&gt;Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it.&lt;/p&gt;
+
+&lt;p&gt;The paper is done by UCSB Sec-lab and Ruoyu Wang’s group at Arizona University named &lt;strong&gt;&amp;lt;KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware&amp;gt;&lt;/strong&gt;. They proposed a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions.&lt;/p&gt;
+
+&lt;p&gt;This matches the features of IoT devices very well, previous works mainly deal with single binary analysis like &lt;a href=&quot;https://www.ndss-symposium.org/wp-content/uploads/2017/09/11_1_2.pdf&quot;&gt;Firmalice&lt;/a&gt; and &lt;a href=&quot;https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-redini.pdf&quot;&gt;BootStomp&lt;/a&gt;. However, the interactions between multiple components are often ignored or just analyzed from the perspective of behavior instead of code itself, like &lt;a href=&quot;https://web.cse.ohio-state.edu/~lin.3021/file/NDSS18b.pdf&quot;&gt;IoTFuzzer&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The high-level idea of this paper is to apply &lt;strong&gt;taint analysis&lt;/strong&gt; to multiple “connected” components and try to figure out the paths which contain insecure data flow. For example, the user sends a request to the webserver through the web interface(like 192.168.0.1), the server accepts the request and summons a local binary to accomplish the task.&lt;/p&gt;
+
+&lt;p&gt;The overall structure of this approach is shown below.&lt;img src=&quot;/images/Karonte.png&quot; alt=&quot;Karonte.png&quot; /&gt;&lt;/p&gt;
+
+&lt;h3 id=&quot;border-binaries-discovery&quot;&gt;Border Binaries Discovery&lt;/h3&gt;
+&lt;p&gt;After successfully unpacking the firmware, Karonte’s &lt;strong&gt;Border Binaries Discovery&lt;/strong&gt; module searches for “border binaries” which &lt;strong&gt;&lt;em&gt;exports the device functionality to the outside world&lt;/em&gt;&lt;/strong&gt;. Those border binaries incorporate the logic necessary to &lt;strong&gt;&lt;em&gt;accept user requests received from external sources&lt;/em&gt;&lt;/strong&gt; and represent the point where attacker-controlled data is(maybe) introduced.&lt;/p&gt;
+
+&lt;p&gt;The key component of Border Binaries Discovery Module is to recognize those “network-facing” binaries. The task is transformed into finding “network request parsing” functions. The authors combined metrics from previous works and proposed the following rules:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;the number of basic blocks&lt;/li&gt;
+  &lt;li&gt;the number of branches&lt;/li&gt;
+  &lt;li&gt;the number of conditional statements used in conjunction with memory comparisons&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;&lt;em&gt;network mark&lt;/em&gt;&lt;/strong&gt; (#net)&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;&lt;em&gt;connection mark&lt;/em&gt;&lt;/strong&gt; (#conn)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The “network mark” encodes the probability that a parsing function handles network messages. The idea is straight-forward, Karonte just locates those memory comparisons and infer the referenced string used to do the comparison. If the referenced string is in a preset list of &lt;strong&gt;&lt;em&gt;network-encoding&lt;/em&gt;&lt;/strong&gt; strings, #net increments by one.&lt;/p&gt;
+
+&lt;p&gt;The “connection mark” indicates if any data read from a network socket is used in a memory comparison. #conn is increased by one if there exists a &lt;strong&gt;data-flow&lt;/strong&gt; between a socket read and a memory comparison operation.&lt;/p&gt;
+
+&lt;p&gt;Each binary has a &lt;strong&gt;&lt;em&gt;parsing score&lt;/em&gt;&lt;/strong&gt; indicating the possibility of whether it is a network-facing binary. After that, DBSCAN density-based clustering algorithm is used to get the candidates.&lt;/p&gt;
+
+&lt;h3 id=&quot;binary-dependency-graph-construction&quot;&gt;Binary Dependency Graph Construction&lt;/h3&gt;
+
+&lt;p&gt;Typical taint analyses diffuse tainted data along the control flow graph to find potentially vulnerable sinks. However, in the case of multiple-binary interaction, there is no control flow graph. Karonte tackles this problem by modeling the various &lt;strong&gt;inter-process communication paradigms&lt;/strong&gt; through the use of a set of modules that we call &lt;strong&gt;Communication Paradigm Finders&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;The most common IPC paradigms used in firmware are as follows:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;Files shared by the process.&lt;/li&gt;
+  &lt;li&gt;Shared Memory. Shared memory can be either backed by a file on the file system, or be anonymous.&lt;/li&gt;
+  &lt;li&gt;Environment Variables.&lt;/li&gt;
+  &lt;li&gt;Sockets.&lt;/li&gt;
+  &lt;li&gt;Command Line Arguments.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Each instance of an IPC is identified by a unique key called &lt;strong&gt;data key&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;h4 id=&quot;communication-paradigm-finders&quot;&gt;Communication Paradigm Finders&lt;/h4&gt;
+
+&lt;p&gt;CPF is used to check whether a path contains the necessary code to share data through the communication paradigm that the CPF represents. If so, it uses the following functionalities to gather them.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Data Key Recovery. Which type of IPC the data key is of.&lt;/li&gt;
+  &lt;li&gt;Flow Direction Determination. Whether the binary is a setter or a getter.&lt;/li&gt;
+  &lt;li&gt;Binary Set magnification. Find other binaries that refer to any of the data keys previously identifies.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;building-the-bdg&quot;&gt;Building the BDG&lt;/h4&gt;
+
+&lt;p&gt;Karonte models data dependencies among binaries through a disconnected cyclic diagram $G=(B,E)$. $B$ is the set of binaries and $E$ is the set of directed edges. Each directed edge is represented by a triplet $([b1, loc1, cp1], [b2, loc2, cp2], k)$ which means&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;the information associated with the data key k can flow from binary b1 at location loc1 via the communication paradigm cp1, to the binary b2 at location loc2 via the communication paradigm cp2.&lt;/p&gt;
+
+&lt;/blockquote&gt;
+
+&lt;p&gt;The detailed algorithm of generating BDG is shown as the image below
+&lt;img src=&quot;/images/BDG_algorithm.png&quot; alt=&quot;Screenshot from 2020-04-18 15-36-13.png&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;To put it simply, I conclude the workflow of Karonte into following steps:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;Use border binary discovery module to locate memory comparison locations.  After that, perform a symbolic path exploration from the start of that function to the location, taint the address of the buffer used in that memory comparison.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;After locating those sources, Karonte performs a &lt;strong&gt;backward taint analysis&lt;/strong&gt; and a &lt;strong&gt;forward taint analysis&lt;/strong&gt;. The taint analysis is based on angr symbolic execution engine. During the taint analyses, CPFs of Karonte check each block if the binary is sharing some tainted data, records the data key and the role(setter or getter, propagating tainted data to other binaries or receiving tainted data). By determining the roles of binaries, edges can be added to BDG.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Each CPF of Karonte implements a member function &lt;code class=&quot;highlighter-rouge&quot;&gt;discover_new_binaries&lt;/code&gt;, during the tainting analyses, new binaries that might communicate through the same channel (CP) will be added to the analysis queue.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&quot;insecure-interaction-detection&quot;&gt;Insecure Interaction Detection&lt;/h3&gt;
+
+&lt;p&gt;The Insecure Interaction Detection module finds two types of vulnerabilities:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;memory-corruption bugs&lt;/li&gt;
+  &lt;li&gt;denial of service&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;For the first case, Karonte raises an alert when it finds the attacker-controlled data &lt;strong&gt;unsafely&lt;/strong&gt; reaches a memcpy-like function. For the second, Karonte &lt;strong&gt;retrieves the conditions that control the iterations of a loop&lt;/strong&gt;, if the conditions fully depend on attacker-controlled data, then raise an alert.&lt;/p&gt;
+
+&lt;p&gt;As earlier saying, buffers referenced by memory comparisons are marked as tainted data and then propagated as the symbolic execution goes on. At each step of the symbolic execution, constraints to the buffer are recorded.&lt;/p&gt;
+
+&lt;p&gt;Karonte refers to both &lt;strong&gt;memcpy-like&lt;/strong&gt; functions and &lt;strong&gt;attacker-controlled loops&lt;/strong&gt; as sinks. Once the tainted data reaches a sink during the symbolic execution, Karonte checks:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;If the sink is a loop and one of its conditions completely relies on tainted variables. An alert is raised.&lt;/li&gt;
+  &lt;li&gt;If the sink is a memcpy-like function, Karonte retrieves the address of the &lt;strong&gt;destination buffer&lt;/strong&gt; and recovers its size. If the &lt;strong&gt;tainted buffer&lt;/strong&gt; has a larger size (can be obtained from the collected constraints) than the destination buffer, raise an alert.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&quot;evaluations&quot;&gt;Evaluations&lt;/h3&gt;
+&lt;p&gt;Authors collected firmwares from three sources – current-version Linux-based firmware(#49), Firmware Blobs from previous work BootStomp(#5) and Firmadyne dataset (#899). The authors also claim they &lt;strong&gt;excluded&lt;/strong&gt; MIPS-architecture firmware samples since the incomplete support of angr for MIPS. However, according to my observation, MIPS firmware takes up the most part of IoT markets.
+In a total, among 8565 considered binaries, 46 zero-day CVEs are found by Karonte, indicating the approach is effective.&lt;/p&gt;</content><author><name></name></author><summary type="html">Recently I read an interesting paper about IoT firmware analysis. Since I’m working around this area, I would like to introduce this and share interesting things about it.</summary></entry><entry><title type="html">Diving into angr source code: how CFGFast() works</title><link href="/angr/2020/03/31/angr-CFGFast_1.html" rel="alternate" type="text/html" title="Diving into angr source code: how CFGFast() works" /><published>2020-03-31T17:15:09+08:00</published><updated>2020-03-31T17:15:09+08:00</updated><id>/angr/2020/03/31/angr-CFGFast_1</id><content type="html" xml:base="/angr/2020/03/31/angr-CFGFast_1.html">&lt;p&gt;CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast().&lt;/p&gt;
+
+&lt;p&gt;All the things related to CFGFast are recorded in &lt;code class=&quot;highlighter-rouge&quot;&gt;angr.analyses.cfg.cfg_fast.py&lt;/code&gt;. From it we can see &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast&lt;/code&gt; with two parent classes – &lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGBase&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;As the developer says,&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;CFGFast will only perform light-weight analyses combined with some heuristics, and with some strong assumptions.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;we know the most priorized goal of &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast&lt;/code&gt; is the speed, then comes with the accuracy.&lt;/p&gt;
+
+&lt;p&gt;Same as all other classes inhereted from &lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast&lt;/code&gt; starts its analysis from &lt;code class=&quot;highlighter-rouge&quot;&gt;_analyze()&lt;/code&gt; function. However, since &lt;code class=&quot;highlighter-rouge&quot;&gt;CFG&lt;/code&gt; is the building block of all other graph-based analysis, its &lt;code class=&quot;highlighter-rouge&quot;&gt;self._graph_visitor&lt;/code&gt; is None and will then step into &lt;code class=&quot;highlighter-rouge&quot;&gt;self._analysis_core_baremetal()&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Before the analysis on baremetal, there is something done in &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast._pre_analysis&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;_pre_analysis&lt;/code&gt; conducts some initialization work, including many useful variables during the analysis, including&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;One of the mose important variables is &lt;code class=&quot;highlighter-rouge&quot;&gt;starting_points&lt;/code&gt;. Without it, the CFGFast will not be able to start its analysis. The variable is defined as follows:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;starting_points = set()
+
+# clear all existing functions
+self.kb.functions.clear()
+
+if self._use_symbols:
+    starting_points |= self._function_addresses_from_symbols
+
+if self._extra_function_starts:
+    starting_points |= set(self._extra_function_starts)
+
+# Sort it
+starting_points = sorted(list(starting_points), reverse=True)
+
+if self._start_at_entry and self.project.entry is not None and self._inside_regions(self.project.entry) and \
+        self.project.entry not in starting_points:
+    # make sure self.project.entry is inserted
+    starting_points += [ self.project.entry ]
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;From this piece of code, we can see &lt;code class=&quot;highlighter-rouge&quot;&gt;starting_points&lt;/code&gt; has three sources:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;function addresses obtained from the symbol table. Tracing &lt;code class=&quot;highlighter-rouge&quot;&gt;self._function_addresses_from_symbols&lt;/code&gt;, I find the function &lt;code class=&quot;highlighter-rouge&quot;&gt;_func_addrs_from_symbols()&lt;/code&gt; with the following definition:
+    &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;return {sym.rebased_addr for sym in self._binary.symbols if sym.is_function}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+    &lt;p&gt;indicating that all functions listed in the symbol table are counted into the &lt;code class=&quot;highlighter-rouge&quot;&gt;starting_points&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Apart from those listed in the symbol table, angr also provides an optional argument called &lt;code class=&quot;highlighter-rouge&quot;&gt;function_starts&lt;/code&gt; to let users provide a extra list of functions.&lt;/li&gt;
+  &lt;li&gt;The third one is the entry point of each excutable file.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;After determining all the starting points, angr creates &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGJob&lt;/code&gt;s for them and insert the CFGJobs into the job queue.&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;for sp in starting_points:
+    job = CFGJob(sp, sp, 'Ijk_Boring')
+    self._insert_job(job)
+    # register the job to function `sp`
+    self._register_analysis_job(sp, job)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;After finishing the preanalysis work, the control is passed to &lt;code class=&quot;highlighter-rouge&quot;&gt;_analysis_core_baremetal&lt;/code&gt;. Inside it, jobs are poped from the queue one by one, and the poped one is then passed to &lt;code class=&quot;highlighter-rouge&quot;&gt;_process_job_and_get_successors&lt;/code&gt; to handle. Note that currently these two procedures are still defined in &lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _process_job_and_get_successors(self, job_info):
+    &quot;&quot;&quot;
+    Process a job, get all successors of this job, and call _handle_successor() to handle each successor.
+
+    :param JobInfo job_info: The JobInfo instance
+    :return: None
+    &quot;&quot;&quot;
+
+    job = job_info.job
+
+    successors = self._get_successors(job)
+
+    all_new_jobs = [ ]
+
+    for successor in successors:
+        new_jobs = self._handle_successor(job, successor, successors)
+
+        if new_jobs:
+            all_new_jobs.extend(new_jobs)
+
+            for new_job in new_jobs:
+                self._insert_job(new_job)
+
+    self._post_job_handling(job, all_new_jobs, successors)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;In &lt;code class=&quot;highlighter-rouge&quot;&gt;_process_job_and_get_successors&lt;/code&gt;, the successors of a Job is obtained through &lt;code class=&quot;highlighter-rouge&quot;&gt;self._get_successor(job)&lt;/code&gt;, which is defined in &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _get_successors(self, job):  # pylint:disable=arguments-differ
+
+    # current_function_addr = job.func_addr
+    # addr = job.addr
+
+    # if current_function_addr != -1:
+    #    l.debug(&quot;Tracing new exit %#x in function %#x&quot;, addr, current_function_addr)
+    # else:
+    #    l.debug(&quot;Tracing new exit %#x&quot;, addr)
+
+    jobs = self._scan_block(job)
+
+    # l.debug(&quot;... got %d jobs: %s&quot;, len(jobs), jobs)
+
+    for job_ in jobs:  # type: CFGJob
+        # register those jobs
+        self._register_analysis_job(job_.func_addr, job_)
+
+    return jobs
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Then Dive into &lt;code class=&quot;highlighter-rouge&quot;&gt;self._scan_block(job)&lt;/code&gt;&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _scan_block(self, cfg_job):
+    &quot;&quot;&quot;
+    Scan a basic block starting at a specific address
+
+    :param CFGJob cfg_job: The CFGJob instance.
+    :return: a list of successors
+    :rtype: list
+    &quot;&quot;&quot;
+
+    addr = cfg_job.addr
+    current_func_addr = cfg_job.func_addr
+
+    # Fix the function address
+    # This is for rare cases where we cannot successfully determine the end boundary of a previous function, and
+    # as a consequence, our analysis mistakenly thinks the previous function goes all the way across the boundary,
+    # resulting the missing of the second function in function manager.
+    if addr in self._function_addresses_from_symbols:
+        current_func_addr = addr
+
+    if self._addr_hooked_or_syscall(addr):
+        entries = self._scan_procedure(cfg_job, current_func_addr)
+
+    else:
+        entries = self._scan_irsb(cfg_job, current_func_addr)
+
+    return entries
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Based on the type of current address, &lt;code class=&quot;highlighter-rouge&quot;&gt;_scan_irsb&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;_scan_procedure&lt;/code&gt; will be individually invoked. So what’s happening in &lt;code class=&quot;highlighter-rouge&quot;&gt;_scan_irsb&lt;/code&gt;?
+IRSB stands for &lt;strong&gt;&lt;em&gt;Intermediate Representation Super-Block&lt;/em&gt;&lt;/strong&gt;. Since all analyses in angr work on valgrind VEX IR, and therefore an IRSB is a single-entry, multiple-exit code block.&lt;/p&gt;
+
+&lt;p&gt;The first statement in &lt;code class=&quot;highlighter-rouge&quot;&gt;_scan_irsb&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;addr, function_addr, cfg_node, irsb = self._generate_cfgnode(cfg_job, current_func_addr)&lt;/code&gt;. Step into &lt;code class=&quot;highlighter-rouge&quot;&gt;_generate_cfgnode&lt;/code&gt; we will see how a CFG node is generated. To conclude, &lt;code class=&quot;highlighter-rouge&quot;&gt;_generate_cfgnode&lt;/code&gt; returns 4 important objects &lt;code class=&quot;highlighter-rouge&quot;&gt;addr&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;current_function_addr&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;cfg_node&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;irsb&lt;/code&gt;. Since the cfg node should have a non-overlapped boundary, &lt;code class=&quot;highlighter-rouge&quot;&gt;_generate_cfgnode&lt;/code&gt; performs several checks:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;if the section containing current block executable or not? If not, return None since non-executable sections must not contain any code.&lt;/li&gt;
+  &lt;li&gt;Does the current block exceeds the scope of the current function and spans into another? If it is, the size of that block should be &lt;code class=&quot;highlighter-rouge&quot;&gt;min(block size, distance to the nearest func)&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;Does the current spans across the closest occupied region in segment list? &lt;strong&gt;I’m not sure what is this check used for, hope to know it later.&lt;/strong&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Now go back to &lt;code class=&quot;highlighter-rouge&quot;&gt;_scan_irsb&lt;/code&gt;, at line 1516 of &lt;code class=&quot;highlighter-rouge&quot;&gt;cfg_fast.py&lt;/code&gt;, there is a statement&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;self._process_block_arch_specific(addr, irsb, function_addr)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Step into this function, in its comments I see&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;According to arch types [‘ARMEL’, ‘ARMHF’, ‘MIPS32’] does different fixes.&lt;/p&gt;
+
+  &lt;p&gt;For ARM deals with link register on the stack
+  (see _arm_track_lr_on_stack)
+  For MIPS32 simulates a new state where the global pointer is 0xffffffff
+  from current address after three steps if the first successor does not
+  adjust this value updates this function address (in function manager)
+  to use a conrete global pointer&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Since mostly I’m working on MIPS binary analysis, let’s go directly to the part dealing MIPS.
+&lt;strong&gt;TODO&lt;/strong&gt;&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;As we know, a control flow graph is comprised of multiple control flow nodes linked with each other by edges. How does &lt;code class=&quot;highlighter-rouge&quot;&gt;CFGFast&lt;/code&gt; gets edges? In our case, how &lt;code class=&quot;highlighter-rouge&quot;&gt;successors&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;predecessors&lt;/code&gt; of a CFG node are summarized?&lt;/p&gt;
+
+&lt;p&gt;From line 1528, we have&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;if irsb.statements:
+    for i, stmt in enumerate(irsb.statements):
+        if isinstance(stmt, pyvex.IRStmt.Exit):
+            successors.append((i,
+                               last_ins_addr if self.project.arch.branch_delay_slot else ins_addr,
+                               stmt.dst,
+                               stmt.jumpkind
+                               )
+                              )
+        elif isinstance(stmt, pyvex.IRStmt.IMark):
+            last_ins_addr = ins_addr
+            ins_addr = stmt.addr + stmt.delta
+else:
+    for ins_addr, stmt_idx, exit_stmt in irsb.exit_statements:
+        successors.append((
+            stmt_idx,
+            last_ins_addr if self.project.arch.branch_delay_slot else ins_addr,
+            exit_stmt.dst,
+            exit_stmt.jumpkind
+        ))
+
+successors.append((DEFAULT_STATEMENT,
+                   last_ins_addr if self.project.arch.branch_delay_slot else ins_addr, irsb_next, jumpkind)
+                  )
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;From it we know, when the current VEX statement being analyzed is of the type &lt;code class=&quot;highlighter-rouge&quot;&gt;Exit&lt;/code&gt;, the destination of that statement will be added to the list &lt;code class=&quot;highlighter-rouge&quot;&gt;successors&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Do we finish all the work yet? No! from line 1558 we have&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;for suc in successors:
+    stmt_idx, ins_addr, target, jumpkind = suc
+
+    entries += self._create_jobs(target, jumpkind, function_addr, irsb, addr, cfg_node, ins_addr,
+                                 stmt_idx
+                                 )                                  
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;From it we know each one of the collected successors will be given a created job. Step into &lt;code class=&quot;highlighter-rouge&quot;&gt;self._create_jobs&lt;/code&gt; to see what happens:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _create_jobs(self, target, jumpkind, current_function_addr, irsb, addr, cfg_node, ins_addr, stmt_idx):
+        &quot;&quot;&quot;
+        Given a node and details of a successor, makes a list of CFGJobs
+        and if it is a call or exit marks it appropriately so in the CFG
+
+        :param int target:          Destination of the resultant job
+        :param str jumpkind:        The jumpkind of the edge going to this node
+        :param int current_function_addr: Address of the current function
+        :param pyvex.IRSB irsb:     IRSB of the predecessor node
+        :param int addr:            The predecessor address
+        :param CFGNode cfg_node:    The CFGNode of the predecessor node
+        :param int ins_addr:        Address of the source instruction.
+        :param int stmt_idx:        ID of the source statement.
+        :return:                    a list of CFGJobs
+        :rtype:                     list
+        &quot;&quot;&quot;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;As we know, except from the &lt;code class=&quot;highlighter-rouge&quot;&gt;Exit&lt;/code&gt; statement, a normal &lt;code class=&quot;highlighter-rouge&quot;&gt;Call&lt;/code&gt; also indicates the change of control flow. Let’s see what measurements angr take to handle such cases.&lt;/p&gt;
+
+&lt;p&gt;To put it in a word, angr takes different approaches dealing with &lt;code class=&quot;highlighter-rouge&quot;&gt;jump&lt;/code&gt;s of concrete target address and non-concrete target address.&lt;/p&gt;
+
+&lt;p&gt;First let’s see what happens when the jump target is not concrete.&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;if target_addr is None:
+    # The target address is not a concrete value
+
+    if jumpkind == &quot;Ijk_Ret&quot;:
+        # This block ends with a return instruction.
+        if current_function_addr != -1:
+            self._function_exits[current_function_addr].add(addr)
+            self._function_add_return_site(addr, current_function_addr)
+            self.functions[current_function_addr].returning = True
+            self._pending_jobs.add_returning_function(current_function_addr)
+
+        cfg_node.has_return = True
+
+    elif self._resolve_indirect_jumps and \
+            (jumpkind in ('Ijk_Boring', 'Ijk_Call', 'Ijk_InvalICache') or jumpkind.startswith('Ijk_Sys')):
+        # This is an indirect jump. Try to resolve it.
+        # FIXME: in some cases, a statementless irsb will be missing its instr addresses
+        # and this next part will fail. Use the real IRSB instead
+        irsb = cfg_node.block.vex
+        cfg_node.instruction_addrs = irsb.instruction_addresses
+        resolved, resolved_targets, ij = self._indirect_jump_encountered(addr, cfg_node, irsb,
+                                                                         current_function_addr, stmt_idx)
+        if resolved:
+            for resolved_target in resolved_targets:
+                if jumpkind == 'Ijk_Call':
+                    jobs += self._create_job_call(cfg_node.addr, irsb, cfg_node, stmt_idx, ins_addr,
+                                                  current_function_addr, resolved_target, jumpkind)
+                else:
+                    to_outside, target_func_addr = self._is_branching_to_outside(addr, resolved_target,
+                                                                                 current_function_addr)
+                    edge = FunctionTransitionEdge(cfg_node, resolved_target, current_function_addr,
+                                                  to_outside=to_outside, stmt_idx=stmt_idx, ins_addr=ins_addr,
+                                                  dst_func_addr=target_func_addr,
+                                                  )
+                    ce = CFGJob(resolved_target, target_func_addr, jumpkind,
+                                last_addr=resolved_target, src_node=cfg_node, src_stmt_idx=stmt_idx,
+                                src_ins_addr=ins_addr, func_edges=[ edge ],
+                                )
+                    jobs.append(ce)
+            return jobs
+
+        if ij is None:
+            # this is not a valid indirect jump. maybe it failed sanity checks.
+            # for example, `jr $v0` might show up in a MIPS binary without a following instruction (because
+            # decoding failed). in this case, `jr $v0` shouldn't be a valid instruction, either.
+            return [ ]
+
+        if jumpkind in (&quot;Ijk_Boring&quot;, 'Ijk_InvalICache'):
+            resolved_as_plt = False
+
+            if irsb and self._heuristic_plt_resolving:
+                # Test it on the initial state. Does it jump to a valid location?
+                # It will be resolved only if this is a .plt entry
+                resolved_as_plt = self._resolve_plt(addr, irsb, ij)
+
+                if resolved_as_plt:
+                    jump_target = next(iter(ij.resolved_targets))
+                    target_func_addr = jump_target  # TODO: FIX THIS
+
+                    edge = FunctionTransitionEdge(cfg_node, jump_target, current_function_addr,
+                                                  to_outside=True, dst_func_addr=jump_target,
+                                                  stmt_idx=stmt_idx, ins_addr=ins_addr,
+                                                  )
+                    ce = CFGJob(jump_target, target_func_addr, jumpkind, last_addr=jump_target,
+                                src_node=cfg_node, src_stmt_idx=stmt_idx, src_ins_addr=ins_addr,
+                                func_edges=[edge],
+                                )
+                    jobs.append(ce)
+
+            if resolved_as_plt:
+                # has been resolved as a PLT entry. Remove it from indirect_jumps_to_resolve
+                if ij.addr in self._indirect_jumps_to_resolve:
+                    self._indirect_jumps_to_resolve.remove(ij.addr)
+                    self._deregister_analysis_job(current_function_addr, ij)
+            else:
+                # add it to indirect_jumps_to_resolve
+                self._indirect_jumps_to_resolve.add(ij)
+
+                # register it as a job for the current function
+                self._register_analysis_job(current_function_addr, ij)
+
+        else:  # jumpkind == &quot;Ijk_Call&quot; or jumpkind.startswith('Ijk_Sys')
+            self._indirect_jumps_to_resolve.add(ij)
+            self._register_analysis_job(current_function_addr, ij)
+
+            jobs += self._create_job_call(addr, irsb, cfg_node, stmt_idx, ins_addr, current_function_addr, None,
+                                          jumpkind, is_syscall=is_syscall
+                                          )
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;The first case it handles is the statement with an normal &lt;code class=&quot;highlighter-rouge&quot;&gt;return&lt;/code&gt;. The &lt;code class=&quot;highlighter-rouge&quot;&gt;cfg_node.has_return&lt;/code&gt; will be set &lt;code class=&quot;highlighter-rouge&quot;&gt;True&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;The second case is the statement with an indirect target, angr  tries to recover the real target by &lt;code class=&quot;highlighter-rouge&quot;&gt;cfg_base._indirect_jump_encountered&lt;/code&gt;. The comments on the top say angr tries to resolve the indirect jump using timeless (fast) indirect jump resolvers, and then &lt;code class=&quot;highlighter-rouge&quot;&gt;cfg_base._resolve_indirect_jump_timelessly&lt;/code&gt; is executed, due to the page limitation, I will write down all my analyses of &lt;strong&gt;angr jump resolvers&lt;/strong&gt; in a new post.&lt;/p&gt;
+
+&lt;p&gt;When the target address is concrete, angr does  following things:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;elif target_addr is not None:
+    # This is a direct jump with a concrete target.
+
+    # pylint: disable=too-many-nested-blocks
+    if jumpkind in ('Ijk_Boring', 'Ijk_InvalICache'):
+        to_outside, target_func_addr = self._is_branching_to_outside(addr, target_addr, current_function_addr)
+        edge = FunctionTransitionEdge(cfg_node, target_addr, current_function_addr,
+                                      to_outside=to_outside,
+                                      dst_func_addr=target_func_addr,
+                                      ins_addr=ins_addr,
+                                      stmt_idx=stmt_idx,
+                                      )
+
+        ce = CFGJob(target_addr, target_func_addr, jumpkind, last_addr=addr, src_node=cfg_node,
+                    src_ins_addr=ins_addr, src_stmt_idx=stmt_idx, func_edges=[ edge ])
+        jobs.append(ce)
+
+    elif jumpkind == 'Ijk_Call' or jumpkind.startswith(&quot;Ijk_Sys&quot;):
+        jobs += self._create_job_call(addr, irsb, cfg_node, stmt_idx, ins_addr, current_function_addr,
+                                      target_addr, jumpkind, is_syscall=is_syscall
+                                      )
+
+    else:
+        # TODO: Support more jumpkinds
+        l.debug(&quot;Unsupported jumpkind %s&quot;, jumpkind)
+        l.debug(&quot;Instruction address: %#x&quot;, ins_addr)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;If the jumpkind is of the type &lt;code class=&quot;highlighter-rouge&quot;&gt;Ijk_Boring&lt;/code&gt; or &lt;code class=&quot;highlighter-rouge&quot;&gt;Ijk_InvalICache&lt;/code&gt;, a &lt;code class=&quot;highlighter-rouge&quot;&gt;FunctionTransitionEdge&lt;/code&gt; will be generated and then a new CFGJob will be produced and added to the queue.
+&lt;strong&gt;TODO: clarify Ijk_InvalICache&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;If the jumpkind is &lt;code class=&quot;highlighter-rouge&quot;&gt;Ijk_Call&lt;/code&gt; or something with the prefix &lt;code class=&quot;highlighter-rouge&quot;&gt;Ijk_Sys&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;_create_job_call&lt;/code&gt; will be called. In it the target will be given a CFGJob, the analysis continues.&lt;/p&gt;
+
+&lt;p&gt;Now let’s go back to function &lt;code class=&quot;highlighter-rouge&quot;&gt;_process_job_and_get_successors&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;forward_analysis&lt;/code&gt;, we can see that after collecting all &lt;code class=&quot;highlighter-rouge&quot;&gt;successors&lt;/code&gt;, angr starts to handle each of them.&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;for successor in successors:
+  new_jobs = self._handle_successor(job, successor, successors)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Interestingly, I found the implementation of &lt;code class=&quot;highlighter-rouge&quot;&gt;_handle_successor&lt;/code&gt; is quite simple, just one statement &lt;code class=&quot;highlighter-rouge&quot;&gt;return [successor]&lt;/code&gt;, which means most of the work of generating a CFG has been done in &lt;code class=&quot;highlighter-rouge&quot;&gt;_get_successors&lt;/code&gt; function.&lt;/p&gt;
+
+&lt;p&gt;Uptill now, we have almost finish analyzing the whole work flow of CFGFast, but there is still a question, how does angr deal with &lt;code class=&quot;highlighter-rouge&quot;&gt;indirect jump targets&lt;/code&gt;? For example, what if the target is stored in a general-purpose register? I will take MIPS as the example to uncover this.&lt;/p&gt;</content><author><name></name></author><summary type="html">CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast().</summary></entry><entry><title type="html">How Reaching Definition Analysis is implemented in angr</title><link href="/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html" rel="alternate" type="text/html" title="How Reaching Definition Analysis is implemented in angr" /><published>2020-03-21T18:01:00+08:00</published><updated>2020-03-21T18:01:00+08:00</updated><id>/angr/2020/03/21/angr-ReachingDefinitionAnalysis</id><content type="html" xml:base="/angr/2020/03/21/angr-ReachingDefinitionAnalysis.html">&lt;p&gt;It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it.&lt;/p&gt;
+
+&lt;p&gt;I selected the Reaching Definition Analysis (RDA) as the breakthrough.  As its self-definition says:&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;angr is a python framework for analyzing binaries. It combines both static and dynamic symbolic (“concolic”) analysis, making it applicable to a variety of tasks.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The most significant advantage of angr is its combination of different types of analysis, and a very good expansibility.&lt;/p&gt;
+
+&lt;p&gt;I used PyCharm to do code exploration, thanks to its convenient and powerful Forward/Backward navigation functionalities, I saved a lot of time. &lt;strong&gt;The code I’m referring to is angr-dev version (8, 20, 1, 7)&lt;/strong&gt; (outputed by &lt;code class=&quot;highlighter-rouge&quot;&gt;python -c &quot;import angr; print(angr.__version__)&quot;&lt;/code&gt;)&lt;/p&gt;
+
+&lt;p&gt;The most obvious class of RDA is &lt;code class=&quot;highlighter-rouge&quot;&gt;ReachingDefinitionAnalysis&lt;/code&gt;, it is inherited from two parent classes &lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;Analysis&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Actually &lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt; can be regarded as the most important class for you to implement your own analysis “pass” as it provides a foundamental structure for forward analysis.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;This is my very first attempt to build a static forward analysis framework that can serve as the base of multiple&lt;br /&gt;
+static analyses in angr, including CFG analysis, VFG analysis, DDG, etc.&lt;br /&gt;
+In short, ForwardAnalysis performs a forward data-flow analysis by traversing a graph, compute on abstract values,&lt;br /&gt;
+and store results in abstract states. The user can specify what graph to traverse, how a graph should be traversed,&lt;br /&gt;
+how abstract values and abstract states are defined, etc.
+– Fish&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;ForwardAnalysis&lt;/code&gt; provides basic building blocks for implementing a forward analysis. The most crutial function is &lt;code class=&quot;highlighter-rouge&quot;&gt;_analyze&lt;/code&gt;, inside it we can see:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _analyze(self):
+    &quot;&quot;&quot;
+    The main analysis routine.
+
+    :return: None
+    &quot;&quot;&quot;
+    self._pre_analysis()
+    if self._graph_visitor is None:
+        # There is no base graph that we can rely on. The analysis itself should generate successors for the
+        # current job.
+        # An example is the CFG recovery.
+
+        self._analysis_core_baremetal()
+    else:
+        # We have a base graph to follow. Just handle the current job.
+        self._analysis_core_graph()
+    self._post_analysis()
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;We can do some self-defined pre-work in &lt;code class=&quot;highlighter-rouge&quot;&gt;_pre_analysis()&lt;/code&gt;, after that, if we provide a &lt;code class=&quot;highlighter-rouge&quot;&gt;graph&lt;/code&gt; object to ForwardAnalysis, the control will be given to &lt;code class=&quot;highlighter-rouge&quot;&gt;_analysis_core_graph()&lt;/code&gt;. After analyzing each node of the graph, we can do some work by &lt;code class=&quot;highlighter-rouge&quot;&gt;_post_analysis()&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Diving into &lt;code class=&quot;highlighter-rouge&quot;&gt;_analysis_core_graph&lt;/code&gt; function, we can see, nodes are unstoppably fetched by &lt;code class=&quot;highlighter-rouge&quot;&gt;self._graph_visitor.next_node()&lt;/code&gt;, on each node, &lt;code class=&quot;highlighter-rouge&quot;&gt;self._run_on_node()&lt;/code&gt; is executed. It returns a new &lt;code class=&quot;highlighter-rouge&quot;&gt;state&lt;/code&gt; named &lt;code class=&quot;highlighter-rouge&quot;&gt;output_state&lt;/code&gt; and the &lt;code class=&quot;highlighter-rouge&quot;&gt;output_state&lt;/code&gt; of the current node will be used as the &lt;code class=&quot;highlighter-rouge&quot;&gt;input_state&lt;/code&gt; of the next node.&lt;/p&gt;
+
+&lt;p&gt;Note that the &lt;code class=&quot;highlighter-rouge&quot;&gt;state&lt;/code&gt; here is not what we refer to &lt;code class=&quot;highlighter-rouge&quot;&gt;SimState&lt;/code&gt; when playing angr symbolic execution. It’s just a type of program abstraction, you can even define yours.&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _analysis_core_graph(self):
+
+    while not self.should_abort:
+
+        self._intra_analysis()
+
+        n = self._graph_visitor.next_node()
+
+        if n is None:
+            break
+
+        job_state = self._get_input_state(n)
+        if job_state is None:
+            job_state = self._initial_abstract_state(n)
+
+        changed, output_state = self._run_on_node(n, job_state)
+
+        # output state of node n is input state for successors to node n
+        successors_to_visit = self._add_input_state(n, output_state)
+
+        if changed is False:
+            # no change is detected
+            continue
+        elif changed is True:
+            # changes detected
+            # revisit all its successors
+            self._graph_visitor.revisit_successors(n, include_self=False)
+        else:
+            # the change of states are determined during state merging (_add_input_state()) instead of during
+            # simulated execution (_run_on_node()).
+            # revisit all successors in the `successors_to_visit` list
+            for succ in successors_to_visit:
+                self._graph_visitor.revisit_node(succ)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;After knowing the whole structure of ForwardAnalysis, let’s jump back to class &lt;code class=&quot;highlighter-rouge&quot;&gt;ReachingDefinitionsAnalysis&lt;/code&gt;. Tracing from &lt;code class=&quot;highlighter-rouge&quot;&gt;_analyze()&lt;/code&gt;, we will then reach &lt;code class=&quot;highlighter-rouge&quot;&gt;self._run_on_node&lt;/code&gt;. Inside it we can find two temporary variables – &lt;code class=&quot;highlighter-rouge&quot;&gt;block&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;engine&lt;/code&gt;, the &lt;code class=&quot;highlighter-rouge&quot;&gt;block&lt;/code&gt; refers to the current code block which is being processed and &lt;code class=&quot;highlighter-rouge&quot;&gt;engine&lt;/code&gt;, in our case, is an instance of the type &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEX&lt;/code&gt;, which will be dealt with later.&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;self._engine_vex = SimEngineRDVEX(self.project, self._current_local_call_depth, self._maximum_local_call_depth,
+                                          self._function_handler)
+...
+block = self.project.factory.block(node.addr, node.size, opt_level=0)
+block_key = node.addr
+engine = self._engine_vex
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;After that we find a key statement &lt;code class=&quot;highlighter-rouge&quot;&gt;self.node_observe(node.addr, state, OP_BEFORE)&lt;/code&gt;. angr RDA, and other similar analysis, provide a concept of &lt;code class=&quot;highlighter-rouge&quot;&gt;observation&lt;/code&gt;, we can set as many observation points as we want so that we can see what is happening there. The observation points can be “instructions” or “blocks”, the time to observe can be “OP_BEFORE” or “OP_AFTER”. For those states already reaching the observation points, they will be stored in a python-dictionary object like the following shows:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;key = 'node', node_addr, op_type
+...
+self.observed_results[key] = state
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Following it, here comes to the very important sentence&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;state, self._visited_blocks = engine.process(
+    state,
+    block=block,
+    fail_fast=self._fail_fast,
+    visited_blocks=self._visited_blocks
+)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;To know how that engine &lt;code class=&quot;highlighter-rouge&quot;&gt;process&lt;/code&gt; a block, we need dive into the code of class &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEX&lt;/code&gt;.
+From &lt;code class=&quot;highlighter-rouge&quot;&gt;class SimEngineRDVEX(SimEngineRDVEXMinin, SimEngineLight)&lt;/code&gt; we can see, &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEX&lt;/code&gt; has inherited something form &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineLight&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEXMinin&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def process(self, state, *args, **kwargs):
+    self._def_use_graph = kwargs.pop('def_use_graph', None)
+    self._visited_blocks = kwargs.pop('visited_blocks', None)
+
+    # we are using a completely different state. Therefore, we directly call our _process() method before
+    # SimEngine becomes flexible enough.
+    try:
+        self._process(
+            state,
+            None,
+            block=kwargs.pop('block', None),
+        )
+    except SimEngineError as e:
+        if kwargs.pop('fail_fast', False) is True:
+            raise e
+        l.error(e)
+    return self.state, self._visited_blocks
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;The private function &lt;code class=&quot;highlighter-rouge&quot;&gt;_process&lt;/code&gt; in &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEXMinin&lt;/code&gt; leads us to &lt;code class=&quot;highlighter-rouge&quot;&gt;_proccess_Stmt&lt;/code&gt; function.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _process_Stmt(self, whitelist=None):
+  ...
+  for stmt_idx, stmt in enumerate(self.block.vex.statements):
+      if whitelist is not None and stmt_idx not in whitelist:
+          continue
+      self.stmt_idx = stmt_idx
+
+      if type(stmt) is pyvex.IRStmt.IMark:
+          # Note that we cannot skip IMarks as they are used later to trigger observation events
+          self.ins_addr = stmt.addr + stmt.delta
+
+      self._handle_Stmt(stmt)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Here comes to the exciting part &lt;code class=&quot;highlighter-rouge&quot;&gt;_handle_Stmt&lt;/code&gt;:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _handle_Stmt(self, stmt):
+    handler = &quot;_handle_%s&quot; % type(stmt).__name__
+    if hasattr(self, handler):
+        getattr(self, handler)(stmt)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;We can see it uses &lt;code class=&quot;highlighter-rouge&quot;&gt;hasattr&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;getattr&lt;/code&gt; to invoke specitif “Stmt handlers” (like what &lt;code class=&quot;highlighter-rouge&quot;&gt;Java reflection&lt;/code&gt; does), if a developer have their own ways of dealing with different Stmts, he/she can overwrites these and write his/her own.&lt;/p&gt;
+
+&lt;p&gt;Back into &lt;code class=&quot;highlighter-rouge&quot;&gt;SimEngineRDVEX&lt;/code&gt; we find there exist a lot of &lt;code class=&quot;highlighter-rouge&quot;&gt;_handle_xxx&lt;/code&gt; routines, take &lt;code class=&quot;highlighter-rouge&quot;&gt;_handle_WrTmp&lt;/code&gt; as an example,&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def _handle_WrTmp(self, stmt):
+    super()._handle_WrTmp(stmt)
+    self.state.kill_and_add_definition(Tmp(stmt.tmp), self._codeloc(), self.tmps[stmt.tmp])
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;After running the parent’s &lt;code class=&quot;highlighter-rouge&quot;&gt;_handle_WrTmp&lt;/code&gt; function, &lt;code class=&quot;highlighter-rouge&quot;&gt;kill_and_add_definition&lt;/code&gt; function is invoked, since “writing a new tmp” will absolutely generate a new definition, and whether some old definitions will be killed depends.&lt;/p&gt;
+
+&lt;p&gt;As a totally static analysis, RDA traverses each VEX (valgrind IR) statements and stores their effects into &lt;code class=&quot;highlighter-rouge&quot;&gt;state&lt;/code&gt;s. One other thing to mention, since angr works on VEX level, their atoms are different from those low-level assembly. If you want to know what an atom (in our case, &lt;code class=&quot;highlighter-rouge&quot;&gt;Tmp&lt;/code&gt;), you need to check how those atoms are defined, let’s say &lt;code class=&quot;highlighter-rouge&quot;&gt;angr.analyses.reaching_definitions.atoms&lt;/code&gt; module in RDA.&lt;/p&gt;</content><author><name></name></author><summary type="html">It has been a time since I got to know angr. As an opensource academic project, it does a quite good job. In the coming days (months), I will try to dive into angr source code, for the aim of knowing its internals, the structure of this awesome framework and applies my algorithms to it.</summary></entry><entry><title type="html">Welcome to Jekyll!</title><link href="/jekyll/update/2020/03/09/welcome-to-jekyll.html" rel="alternate" type="text/html" title="Welcome to Jekyll!" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>/jekyll/update/2020/03/09/welcome-to-jekyll</id><content type="html" xml:base="/jekyll/update/2020/03/09/welcome-to-jekyll.html">&lt;p&gt;You’ll find this post in your &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll serve&lt;/code&gt;, which launches a web server and auto-regenerates your site when a file is updated.&lt;/p&gt;
 
 &lt;p&gt;To add new posts, simply add a file in the &lt;code class=&quot;highlighter-rouge&quot;&gt;_posts&lt;/code&gt; directory that follows the convention &lt;code class=&quot;highlighter-rouge&quot;&gt;YYYY-MM-DD-name-of-post.ext&lt;/code&gt; and includes the necessary front matter. Take a look at the source for this post to get an idea about how it works.&lt;/p&gt;
 
@@ -92,11 +966,11 @@ As the image shown, the binary is a 64-bit dynamically linked file.&lt;/p&gt;
 &lt;span class=&quot;n&quot;&gt;print_hi&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;'Tom'&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
 &lt;span class=&quot;c1&quot;&gt;#=&amp;gt; prints 'Hi, Tom' to STDOUT.&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
 
-&lt;p&gt;Check out the &lt;a href=&quot;https://jekyllrb.com/docs/home&quot;&gt;Jekyll docs&lt;/a&gt; for more info on how to get the most out of Jekyll. File all bugs/feature requests at &lt;a href=&quot;https://github.com/jekyll/jekyll&quot;&gt;Jekyll’s GitHub repo&lt;/a&gt;. If you have questions, you can ask them on &lt;a href=&quot;https://talk.jekyllrb.com/&quot;&gt;Jekyll Talk&lt;/a&gt;.&lt;/p&gt;</content><author><name></name></author><summary type="html">You’ll find this post in your _posts directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run jekyll serve, which launches a web server and auto-regenerates your site when a file is updated.</summary></entry><entry><title type="html">From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)</title><link href="http://localhost:4000/math/crypto/2020/03/09/congruence.html" rel="alternate" type="text/html" title="From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>http://localhost:4000/math/crypto/2020/03/09/congruence</id><content type="html" xml:base="http://localhost:4000/math/crypto/2020/03/09/congruence.html">&lt;h2 id=&quot;from-congruence-to-extended-euclidean-crt-and-crt-optimized-rsa-part-1&quot;&gt;From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)&lt;/h2&gt;
+&lt;p&gt;Check out the &lt;a href=&quot;https://jekyllrb.com/docs/home&quot;&gt;Jekyll docs&lt;/a&gt; for more info on how to get the most out of Jekyll. File all bugs/feature requests at &lt;a href=&quot;https://github.com/jekyll/jekyll&quot;&gt;Jekyll’s GitHub repo&lt;/a&gt;. If you have questions, you can ask them on &lt;a href=&quot;https://talk.jekyllrb.com/&quot;&gt;Jekyll Talk&lt;/a&gt;.&lt;/p&gt;</content><author><name></name></author><summary type="html">You’ll find this post in your _posts directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run jekyll serve, which launches a web server and auto-regenerates your site when a file is updated.</summary></entry><entry><title type="html">From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)</title><link href="/math/crypto/2020/03/09/congruence.html" rel="alternate" type="text/html" title="From congruence to Euclidean, CRT and CRT-optimized RSA(part 1)" /><published>2020-03-09T13:56:45+08:00</published><updated>2020-03-09T13:56:45+08:00</updated><id>/math/crypto/2020/03/09/congruence</id><content type="html" xml:base="/math/crypto/2020/03/09/congruence.html">&lt;h2 id=&quot;from-congruence-to-extended-euclidean-crt-and-crt-optimized-rsa-part-1&quot;&gt;From congruence to extended Euclidean, CRT and CRT-optimized RSA (part 1)&lt;/h2&gt;
 
-&lt;p&gt;Recently I was taking the role of TA as a software security course. Part One of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.&lt;/p&gt;
+&lt;p&gt;Recently I was taking the role of TA in a software security course. The first part of it focuses on standard cryptos. Instead of just showing the textbook crypto, we dive into how real crypto system is built and practical attacks around it. The course needs a lot of crypto background knowledge and I spend some time understanding them.&lt;/p&gt;
 
-&lt;p&gt;In this blog I dive into some number theory backgrounds and they are pretty important in understanding RSA algorithm.&lt;/p&gt;
+&lt;p&gt;In this blog I dive into some number theory basics  which are pretty important in understanding RSA algorithm.&lt;/p&gt;
 
 &lt;p&gt;The first concept is congruence. When $A$ and $B$ have the same result doing modular arithmetic, we say $A$ &lt;strong&gt;is congruent to&lt;/strong&gt; $B$. The mathematical way of representing this is $A \equiv B\mod n$.
 Note that $\equiv$ is to describe the equivalence relation between two elements. We usually pair an operation (in this case, the operation is “mod”) with it. Therefore, we can say&lt;/p&gt;
@@ -127,25 +1001,25 @@ Note that $\equiv$ is to describe the equivalence relation between two elements.
 
 &lt;p&gt;If we have $ak \equiv bk \mod m$ where $k\neq 0$, we &lt;strong&gt;cannot&lt;/strong&gt; get $a \equiv b \mod m$.&lt;/p&gt;
 
-&lt;p&gt;Actually when we are dealing with division in congruence arithmetic, we need to find the &lt;strong&gt;modular inverse&lt;/strong&gt;. For $a \equiv b mod m$, we use $a^{-1}$ to be $a$’s modular inverse, then we have the following relation:&lt;/p&gt;
+&lt;p&gt;Actually when we are dealing with division in congruence arithmetic, we need to find the &lt;strong&gt;modulo inverse&lt;/strong&gt;. For $a \equiv b mod m$, we use $a^{-1}$ to be $a$’s modulo inverse, then we have the following relation:&lt;/p&gt;
 
 &lt;p&gt;$aa^{-1}\equiv 1\mod m$.&lt;/p&gt;
 
-&lt;p&gt;The modular inverse seems not easy to understand, why do we use such concept?&lt;/p&gt;
+&lt;p&gt;The modulo inverse seems not easy to understand, why do we use such concept?&lt;/p&gt;
 
-&lt;p&gt;As we know, for rational numbers, division is the inverse operation of multiplication. However, for congruence, the inverse operation of multiplication is &lt;strong&gt;&lt;em&gt;modular inverse&lt;/em&gt;&lt;/strong&gt;, which means, if you want to calculate $\frac{a}{b} \mod m$, you should use $a*b^{-1} \mod m$ instead. Since $b^{-1}$ only exists when $b$ satisfies some conditions, we know getting $a \equiv b \mod m$ from $ak \equiv bk \mod m$ does not always hold.&lt;/p&gt;
+&lt;p&gt;As we know, for rational numbers, division is the inverse operation of multiplication. However, for congruence, the inverse operation of multiplication is &lt;strong&gt;&lt;em&gt;modulo inverse&lt;/em&gt;&lt;/strong&gt;, which means, if you want to calculate $\frac{a}{b} \mod m$, you should use $a*b^{-1} \mod m$ instead. Since $b^{-1}$ only exists when $b$ satisfies some conditions, we know getting $a \equiv b \mod m$ from $ak \equiv bk \mod m$ does not always hold.&lt;/p&gt;
 
 &lt;p&gt;When does it hold?
 The answer is “when $gcd(k,m)=1$.&lt;/p&gt;
 
-&lt;p&gt;The modular inverse plays a big role in RSA crypto. How to calculate it? We can use &lt;strong&gt;&lt;em&gt;Extended Euclidean&lt;/em&gt;&lt;/strong&gt; algorithm.
+&lt;p&gt;The modulo inverse plays a big role in RSA crypto. How to calculate it? We can use &lt;strong&gt;&lt;em&gt;extended Euclidean&lt;/em&gt;&lt;/strong&gt; algorithm.
 As we all know, the Euclidean algorithm works like below:&lt;/p&gt;
 &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;def gcd(a,b):
   if b == 0:
     return a
   return gcd(b, a%b)
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
-&lt;p&gt;So what is Extended Euclidean algorithm? It is used to solve a equation of two unknowns like below:
+&lt;p&gt;So what is extended Euclidean algorithm? It is used to solve a equation of two unknowns like below:
 $ax+by = gcd(a,b)$ &lt;a href=&quot;https://math.stackexchange.com/questions/1058596/in-plain-language-whats-the-difference-between-two-things-that-are-equivalent&quot;&gt;1&lt;/a&gt;
 Using EEuc we can get $x$, $y$ and $gcd(a,b)$ at the same time. (There will be infinite solutions $x$ and $y$) How does it work?
 From the definition of &lt;code class=&quot;highlighter-rouge&quot;&gt;gcd&lt;/code&gt; function above, we know before &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; becoming zero, we have &lt;code class=&quot;highlighter-rouge&quot;&gt;gcd(a,b) == gcd(b,a%b)&lt;/code&gt;, therefore, we use &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;a%b&lt;/code&gt; to replace &lt;code class=&quot;highlighter-rouge&quot;&gt;a&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;b&lt;/code&gt; in the above equation and get:
@@ -169,7 +1043,7 @@ The code would be like:&lt;/p&gt;
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 &lt;p&gt;If you don’t understand the above code, draw a recursive tree and you will get it.&lt;/p&gt;
 
-&lt;!--The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to get the modular inverse of $b$, we need to find $b^{-1}$ such that $bb^{-1} \equiv 1 \mod n$. If we make $x=0$ then we have $by = gcd(a,b)$. Since the modular inverse of $b$ only exists when $gcd(b,n) = 1$, let $a=n$, the $by=gcd(a,b)$ will turn to $by=gcd(b,n)=1$, and $y$ is the modular inverse of $b$, which can be solved by Extended Euclidean algorithm, just invoke `ext_euc(n,b)`--&gt;
-&lt;p&gt;The common usage of Extended Euclidean algorithm is to calculate the modular inverse. Suppose we want to calculate the modular inverse of $b$, $b^{-1}$ will only exist when $gcd(a,b)=1$. Take it into $ax+by=gcd(a,b)$ we have $ax+by=1$, make both sides of the equation mod $a$, we have $by=1 \mod a$, therefore we get $y$, which is the modular inverse of $b$.&lt;/p&gt;
+&lt;!--The common usage of extended Euclidean algorithm is to calculate the modulo inverse. Suppose we want to get the modulo inverse of $b$, we need to find $b^{-1}$ such that $bb^{-1} \equiv 1 \mod n$. If we make $x=0$ then we have $by = gcd(a,b)$. Since the modulo inverse of $b$ only exists when $gcd(b,n) = 1$, let $a=n$, the $by=gcd(a,b)$ will turn to $by=gcd(b,n)=1$, and $y$ is the modulo inverse of $b$, which can be solved by extended Euclidean algorithm, just invoke `ext_euc(n,b)`--&gt;
+&lt;p&gt;The common usage of extended Euclidean algorithm is to calculate the modulo inverse. Suppose we want to calculate the modulo inverse of $b$, $b^{-1}$ will only exist when $gcd(a,b)=1$. Take it into $ax+by=gcd(a,b)$ we have $ax+by=1$, make both sides of the equation mod $a$, we have $by=1 \mod a$, therefore we get $y$, which is the modulo inverse of $b$.&lt;/p&gt;
 
-&lt;p&gt;In the second part, I will introduce what CRT is and how CRT makes RSA faster.&lt;/p&gt;</content><author><name></name></author><summary type="html">From congruence to Extended Euclidean, CRT and CRT-optimized RSA (part 1)</summary></entry></feed>
+&lt;p&gt;In the second part, I will introduce what CRT is and how CRT makes RSA faster.&lt;/p&gt;</content><author><name></name></author><summary type="html">From congruence to extended Euclidean, CRT and CRT-optimized RSA (part 1)</summary></entry></feed>

@@ -1,4 +1,9 @@
-## Tensorflow v2.0 compilation and fuzzing (part 1)
+---
+layout: post
+title:  "Tensorflow v2.0 compilation from source code and fuzzing (part 1)"
+date:   2020-06-25 22:18:09 +0800
+categories: tensorflow
+---
 
 
 

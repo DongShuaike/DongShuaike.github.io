@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+	<!-- 数学公式 -->
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      inlineMath: [['$','$']]
+    }
+  });
+</script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>Diving into angr source code: how CFGFast() works | Personal blog of Shuaike Dong</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="Diving into angr source code: how CFGFast() works" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast()." />
+<meta property="og:description" content="CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast()." />
+<link rel="canonical" href="/angr/2020/03/31/angr-CFGFast_1.html" />
+<meta property="og:url" content="/angr/2020/03/31/angr-CFGFast_1.html" />
+<meta property="og:site_name" content="Personal blog of Shuaike Dong" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2020-03-31T17:15:09+08:00" />
+<script type="application/ld+json">
+{"mainEntityOfPage":{"@type":"WebPage","@id":"/angr/2020/03/31/angr-CFGFast_1.html"},"@type":"BlogPosting","url":"/angr/2020/03/31/angr-CFGFast_1.html","headline":"Diving into angr source code: how CFGFast() works","dateModified":"2020-03-31T17:15:09+08:00","datePublished":"2020-03-31T17:15:09+08:00","description":"CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast().","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Personal blog of Shuaike Dong" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Personal blog of Shuaike Dong</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Diving into angr source code: how CFGFast() works</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2020-03-31T17:15:09+08:00" itemprop="datePublished">Mar 31, 2020
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>CFGs are most-commonly used objects in programming analysis. In this post, I will explore how CFGs are built in angr. Angr provides two types of CFGs – CFGFast and CFGAccurate. To be precise, what I’m going to analyze is CFGFast().</p>
+
+<p>All the things related to CFGFast are recorded in <code class="highlighter-rouge">angr.analyses.cfg.cfg_fast.py</code>. From it we can see <code class="highlighter-rouge">CFGFast</code> with two parent classes – <code class="highlighter-rouge">ForwardAnalysis</code> and <code class="highlighter-rouge">CFGBase</code>.</p>
+
+<p>As the developer says,</p>
+<blockquote>
+  <p>CFGFast will only perform light-weight analyses combined with some heuristics, and with some strong assumptions.</p>
+</blockquote>
+
+<p>we know the most priorized goal of <code class="highlighter-rouge">CFGFast</code> is the speed, then comes with the accuracy.</p>
+
+<p>Same as all other classes inhereted from <code class="highlighter-rouge">ForwardAnalysis</code>, <code class="highlighter-rouge">CFGFast</code> starts its analysis from <code class="highlighter-rouge">_analyze()</code> function. However, since <code class="highlighter-rouge">CFG</code> is the building block of all other graph-based analysis, its <code class="highlighter-rouge">self._graph_visitor</code> is None and will then step into <code class="highlighter-rouge">self._analysis_core_baremetal()</code>.</p>
+
+<p>Before the analysis on baremetal, there is something done in <code class="highlighter-rouge">CFGFast._pre_analysis</code>.</p>
+
+<p><code class="highlighter-rouge">_pre_analysis</code> conducts some initialization work, including many useful variables during the analysis, including</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+</code></pre></div></div>
+<p>One of the mose important variables is <code class="highlighter-rouge">starting_points</code>. Without it, the CFGFast will not be able to start its analysis. The variable is defined as follows:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>starting_points = set()
+
+# clear all existing functions
+self.kb.functions.clear()
+
+if self._use_symbols:
+    starting_points |= self._function_addresses_from_symbols
+
+if self._extra_function_starts:
+    starting_points |= set(self._extra_function_starts)
+
+# Sort it
+starting_points = sorted(list(starting_points), reverse=True)
+
+if self._start_at_entry and self.project.entry is not None and self._inside_regions(self.project.entry) and \
+        self.project.entry not in starting_points:
+    # make sure self.project.entry is inserted
+    starting_points += [ self.project.entry ]
+</code></pre></div></div>
+
+<p>From this piece of code, we can see <code class="highlighter-rouge">starting_points</code> has three sources:</p>
+<ol>
+  <li>function addresses obtained from the symbol table. Tracing <code class="highlighter-rouge">self._function_addresses_from_symbols</code>, I find the function <code class="highlighter-rouge">_func_addrs_from_symbols()</code> with the following definition:
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>return {sym.rebased_addr for sym in self._binary.symbols if sym.is_function}
+</code></pre></div>    </div>
+    <p>indicating that all functions listed in the symbol table are counted into the <code class="highlighter-rouge">starting_points</code>.</p>
+  </li>
+  <li>Apart from those listed in the symbol table, angr also provides an optional argument called <code class="highlighter-rouge">function_starts</code> to let users provide a extra list of functions.</li>
+  <li>The third one is the entry point of each excutable file.</li>
+</ol>
+
+<p>After determining all the starting points, angr creates <code class="highlighter-rouge">CFGJob</code>s for them and insert the CFGJobs into the job queue.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>for sp in starting_points:
+    job = CFGJob(sp, sp, 'Ijk_Boring')
+    self._insert_job(job)
+    # register the job to function `sp`
+    self._register_analysis_job(sp, job)
+</code></pre></div></div>
+
+<p>After finishing the preanalysis work, the control is passed to <code class="highlighter-rouge">_analysis_core_baremetal</code>. Inside it, jobs are poped from the queue one by one, and the poped one is then passed to <code class="highlighter-rouge">_process_job_and_get_successors</code> to handle. Note that currently these two procedures are still defined in <code class="highlighter-rouge">ForwardAnalysis</code>.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _process_job_and_get_successors(self, job_info):
+    """
+    Process a job, get all successors of this job, and call _handle_successor() to handle each successor.
+
+    :param JobInfo job_info: The JobInfo instance
+    :return: None
+    """
+
+    job = job_info.job
+
+    successors = self._get_successors(job)
+
+    all_new_jobs = [ ]
+
+    for successor in successors:
+        new_jobs = self._handle_successor(job, successor, successors)
+
+        if new_jobs:
+            all_new_jobs.extend(new_jobs)
+
+            for new_job in new_jobs:
+                self._insert_job(new_job)
+
+    self._post_job_handling(job, all_new_jobs, successors)
+</code></pre></div></div>
+<p>In <code class="highlighter-rouge">_process_job_and_get_successors</code>, the successors of a Job is obtained through <code class="highlighter-rouge">self._get_successor(job)</code>, which is defined in <code class="highlighter-rouge">CFGFast</code>.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _get_successors(self, job):  # pylint:disable=arguments-differ
+
+    # current_function_addr = job.func_addr
+    # addr = job.addr
+
+    # if current_function_addr != -1:
+    #    l.debug("Tracing new exit %#x in function %#x", addr, current_function_addr)
+    # else:
+    #    l.debug("Tracing new exit %#x", addr)
+
+    jobs = self._scan_block(job)
+
+    # l.debug("... got %d jobs: %s", len(jobs), jobs)
+
+    for job_ in jobs:  # type: CFGJob
+        # register those jobs
+        self._register_analysis_job(job_.func_addr, job_)
+
+    return jobs
+</code></pre></div></div>
+<p>Then Dive into <code class="highlighter-rouge">self._scan_block(job)</code></p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _scan_block(self, cfg_job):
+    """
+    Scan a basic block starting at a specific address
+
+    :param CFGJob cfg_job: The CFGJob instance.
+    :return: a list of successors
+    :rtype: list
+    """
+
+    addr = cfg_job.addr
+    current_func_addr = cfg_job.func_addr
+
+    # Fix the function address
+    # This is for rare cases where we cannot successfully determine the end boundary of a previous function, and
+    # as a consequence, our analysis mistakenly thinks the previous function goes all the way across the boundary,
+    # resulting the missing of the second function in function manager.
+    if addr in self._function_addresses_from_symbols:
+        current_func_addr = addr
+
+    if self._addr_hooked_or_syscall(addr):
+        entries = self._scan_procedure(cfg_job, current_func_addr)
+
+    else:
+        entries = self._scan_irsb(cfg_job, current_func_addr)
+
+    return entries
+</code></pre></div></div>
+<p>Based on the type of current address, <code class="highlighter-rouge">_scan_irsb</code> and <code class="highlighter-rouge">_scan_procedure</code> will be individually invoked. So what’s happening in <code class="highlighter-rouge">_scan_irsb</code>?
+IRSB stands for <strong><em>Intermediate Representation Super-Block</em></strong>. Since all analyses in angr work on valgrind VEX IR, and therefore an IRSB is a single-entry, multiple-exit code block.</p>
+
+<p>The first statement in <code class="highlighter-rouge">_scan_irsb</code> is <code class="highlighter-rouge">addr, function_addr, cfg_node, irsb = self._generate_cfgnode(cfg_job, current_func_addr)</code>. Step into <code class="highlighter-rouge">_generate_cfgnode</code> we will see how a CFG node is generated. To conclude, <code class="highlighter-rouge">_generate_cfgnode</code> returns 4 important objects <code class="highlighter-rouge">addr</code>, <code class="highlighter-rouge">current_function_addr</code>, <code class="highlighter-rouge">cfg_node</code> and <code class="highlighter-rouge">irsb</code>. Since the cfg node should have a non-overlapped boundary, <code class="highlighter-rouge">_generate_cfgnode</code> performs several checks:</p>
+<ol>
+  <li>if the section containing current block executable or not? If not, return None since non-executable sections must not contain any code.</li>
+  <li>Does the current block exceeds the scope of the current function and spans into another? If it is, the size of that block should be <code class="highlighter-rouge">min(block size, distance to the nearest func)</code></li>
+  <li>Does the current spans across the closest occupied region in segment list? <strong>I’m not sure what is this check used for, hope to know it later.</strong></li>
+</ol>
+
+<p>Now go back to <code class="highlighter-rouge">_scan_irsb</code>, at line 1516 of <code class="highlighter-rouge">cfg_fast.py</code>, there is a statement</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>self._process_block_arch_specific(addr, irsb, function_addr)
+</code></pre></div></div>
+<p>Step into this function, in its comments I see</p>
+<blockquote>
+  <p>According to arch types [‘ARMEL’, ‘ARMHF’, ‘MIPS32’] does different fixes.</p>
+
+  <p>For ARM deals with link register on the stack
+  (see _arm_track_lr_on_stack)
+  For MIPS32 simulates a new state where the global pointer is 0xffffffff
+  from current address after three steps if the first successor does not
+  adjust this value updates this function address (in function manager)
+  to use a conrete global pointer</p>
+</blockquote>
+
+<p>Since mostly I’m working on MIPS binary analysis, let’s go directly to the part dealing MIPS.
+<strong>TODO</strong></p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+</code></pre></div></div>
+
+<p>As we know, a control flow graph is comprised of multiple control flow nodes linked with each other by edges. How does <code class="highlighter-rouge">CFGFast</code> gets edges? In our case, how <code class="highlighter-rouge">successors</code> and <code class="highlighter-rouge">predecessors</code> of a CFG node are summarized?</p>
+
+<p>From line 1528, we have</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>if irsb.statements:
+    for i, stmt in enumerate(irsb.statements):
+        if isinstance(stmt, pyvex.IRStmt.Exit):
+            successors.append((i,
+                               last_ins_addr if self.project.arch.branch_delay_slot else ins_addr,
+                               stmt.dst,
+                               stmt.jumpkind
+                               )
+                              )
+        elif isinstance(stmt, pyvex.IRStmt.IMark):
+            last_ins_addr = ins_addr
+            ins_addr = stmt.addr + stmt.delta
+else:
+    for ins_addr, stmt_idx, exit_stmt in irsb.exit_statements:
+        successors.append((
+            stmt_idx,
+            last_ins_addr if self.project.arch.branch_delay_slot else ins_addr,
+            exit_stmt.dst,
+            exit_stmt.jumpkind
+        ))
+
+successors.append((DEFAULT_STATEMENT,
+                   last_ins_addr if self.project.arch.branch_delay_slot else ins_addr, irsb_next, jumpkind)
+                  )
+</code></pre></div></div>
+<p>From it we know, when the current VEX statement being analyzed is of the type <code class="highlighter-rouge">Exit</code>, the destination of that statement will be added to the list <code class="highlighter-rouge">successors</code>.</p>
+
+<p>Do we finish all the work yet? No! from line 1558 we have</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>for suc in successors:
+    stmt_idx, ins_addr, target, jumpkind = suc
+
+    entries += self._create_jobs(target, jumpkind, function_addr, irsb, addr, cfg_node, ins_addr,
+                                 stmt_idx
+                                 )                                  
+</code></pre></div></div>
+<p>From it we know each one of the collected successors will be given a created job. Step into <code class="highlighter-rouge">self._create_jobs</code> to see what happens:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>def _create_jobs(self, target, jumpkind, current_function_addr, irsb, addr, cfg_node, ins_addr, stmt_idx):
+        """
+        Given a node and details of a successor, makes a list of CFGJobs
+        and if it is a call or exit marks it appropriately so in the CFG
+
+        :param int target:          Destination of the resultant job
+        :param str jumpkind:        The jumpkind of the edge going to this node
+        :param int current_function_addr: Address of the current function
+        :param pyvex.IRSB irsb:     IRSB of the predecessor node
+        :param int addr:            The predecessor address
+        :param CFGNode cfg_node:    The CFGNode of the predecessor node
+        :param int ins_addr:        Address of the source instruction.
+        :param int stmt_idx:        ID of the source statement.
+        :return:                    a list of CFGJobs
+        :rtype:                     list
+        """
+</code></pre></div></div>
+<p>As we know, except from the <code class="highlighter-rouge">Exit</code> statement, a normal <code class="highlighter-rouge">Call</code> also indicates the change of control flow. Let’s see what measurements angr take to handle such cases.</p>
+
+<p>To put it in a word, angr takes different approaches dealing with <code class="highlighter-rouge">jump</code>s of concrete target address and non-concrete target address.</p>
+
+<p>First let’s see what happens when the jump target is not concrete.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>if target_addr is None:
+    # The target address is not a concrete value
+
+    if jumpkind == "Ijk_Ret":
+        # This block ends with a return instruction.
+        if current_function_addr != -1:
+            self._function_exits[current_function_addr].add(addr)
+            self._function_add_return_site(addr, current_function_addr)
+            self.functions[current_function_addr].returning = True
+            self._pending_jobs.add_returning_function(current_function_addr)
+
+        cfg_node.has_return = True
+
+    elif self._resolve_indirect_jumps and \
+            (jumpkind in ('Ijk_Boring', 'Ijk_Call', 'Ijk_InvalICache') or jumpkind.startswith('Ijk_Sys')):
+        # This is an indirect jump. Try to resolve it.
+        # FIXME: in some cases, a statementless irsb will be missing its instr addresses
+        # and this next part will fail. Use the real IRSB instead
+        irsb = cfg_node.block.vex
+        cfg_node.instruction_addrs = irsb.instruction_addresses
+        resolved, resolved_targets, ij = self._indirect_jump_encountered(addr, cfg_node, irsb,
+                                                                         current_function_addr, stmt_idx)
+        if resolved:
+            for resolved_target in resolved_targets:
+                if jumpkind == 'Ijk_Call':
+                    jobs += self._create_job_call(cfg_node.addr, irsb, cfg_node, stmt_idx, ins_addr,
+                                                  current_function_addr, resolved_target, jumpkind)
+                else:
+                    to_outside, target_func_addr = self._is_branching_to_outside(addr, resolved_target,
+                                                                                 current_function_addr)
+                    edge = FunctionTransitionEdge(cfg_node, resolved_target, current_function_addr,
+                                                  to_outside=to_outside, stmt_idx=stmt_idx, ins_addr=ins_addr,
+                                                  dst_func_addr=target_func_addr,
+                                                  )
+                    ce = CFGJob(resolved_target, target_func_addr, jumpkind,
+                                last_addr=resolved_target, src_node=cfg_node, src_stmt_idx=stmt_idx,
+                                src_ins_addr=ins_addr, func_edges=[ edge ],
+                                )
+                    jobs.append(ce)
+            return jobs
+
+        if ij is None:
+            # this is not a valid indirect jump. maybe it failed sanity checks.
+            # for example, `jr $v0` might show up in a MIPS binary without a following instruction (because
+            # decoding failed). in this case, `jr $v0` shouldn't be a valid instruction, either.
+            return [ ]
+
+        if jumpkind in ("Ijk_Boring", 'Ijk_InvalICache'):
+            resolved_as_plt = False
+
+            if irsb and self._heuristic_plt_resolving:
+                # Test it on the initial state. Does it jump to a valid location?
+                # It will be resolved only if this is a .plt entry
+                resolved_as_plt = self._resolve_plt(addr, irsb, ij)
+
+                if resolved_as_plt:
+                    jump_target = next(iter(ij.resolved_targets))
+                    target_func_addr = jump_target  # TODO: FIX THIS
+
+                    edge = FunctionTransitionEdge(cfg_node, jump_target, current_function_addr,
+                                                  to_outside=True, dst_func_addr=jump_target,
+                                                  stmt_idx=stmt_idx, ins_addr=ins_addr,
+                                                  )
+                    ce = CFGJob(jump_target, target_func_addr, jumpkind, last_addr=jump_target,
+                                src_node=cfg_node, src_stmt_idx=stmt_idx, src_ins_addr=ins_addr,
+                                func_edges=[edge],
+                                )
+                    jobs.append(ce)
+
+            if resolved_as_plt:
+                # has been resolved as a PLT entry. Remove it from indirect_jumps_to_resolve
+                if ij.addr in self._indirect_jumps_to_resolve:
+                    self._indirect_jumps_to_resolve.remove(ij.addr)
+                    self._deregister_analysis_job(current_function_addr, ij)
+            else:
+                # add it to indirect_jumps_to_resolve
+                self._indirect_jumps_to_resolve.add(ij)
+
+                # register it as a job for the current function
+                self._register_analysis_job(current_function_addr, ij)
+
+        else:  # jumpkind == "Ijk_Call" or jumpkind.startswith('Ijk_Sys')
+            self._indirect_jumps_to_resolve.add(ij)
+            self._register_analysis_job(current_function_addr, ij)
+
+            jobs += self._create_job_call(addr, irsb, cfg_node, stmt_idx, ins_addr, current_function_addr, None,
+                                          jumpkind, is_syscall=is_syscall
+                                          )
+</code></pre></div></div>
+<p>The first case it handles is the statement with an normal <code class="highlighter-rouge">return</code>. The <code class="highlighter-rouge">cfg_node.has_return</code> will be set <code class="highlighter-rouge">True</code>.</p>
+
+<p>The second case is the statement with an indirect target, angr  tries to recover the real target by <code class="highlighter-rouge">cfg_base._indirect_jump_encountered</code>. The comments on the top say angr tries to resolve the indirect jump using timeless (fast) indirect jump resolvers, and then <code class="highlighter-rouge">cfg_base._resolve_indirect_jump_timelessly</code> is executed, due to the page limitation, I will write down all my analyses of <strong>angr jump resolvers</strong> in a new post.</p>
+
+<p>When the target address is concrete, angr does  following things:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>elif target_addr is not None:
+    # This is a direct jump with a concrete target.
+
+    # pylint: disable=too-many-nested-blocks
+    if jumpkind in ('Ijk_Boring', 'Ijk_InvalICache'):
+        to_outside, target_func_addr = self._is_branching_to_outside(addr, target_addr, current_function_addr)
+        edge = FunctionTransitionEdge(cfg_node, target_addr, current_function_addr,
+                                      to_outside=to_outside,
+                                      dst_func_addr=target_func_addr,
+                                      ins_addr=ins_addr,
+                                      stmt_idx=stmt_idx,
+                                      )
+
+        ce = CFGJob(target_addr, target_func_addr, jumpkind, last_addr=addr, src_node=cfg_node,
+                    src_ins_addr=ins_addr, src_stmt_idx=stmt_idx, func_edges=[ edge ])
+        jobs.append(ce)
+
+    elif jumpkind == 'Ijk_Call' or jumpkind.startswith("Ijk_Sys"):
+        jobs += self._create_job_call(addr, irsb, cfg_node, stmt_idx, ins_addr, current_function_addr,
+                                      target_addr, jumpkind, is_syscall=is_syscall
+                                      )
+
+    else:
+        # TODO: Support more jumpkinds
+        l.debug("Unsupported jumpkind %s", jumpkind)
+        l.debug("Instruction address: %#x", ins_addr)
+</code></pre></div></div>
+<p>If the jumpkind is of the type <code class="highlighter-rouge">Ijk_Boring</code> or <code class="highlighter-rouge">Ijk_InvalICache</code>, a <code class="highlighter-rouge">FunctionTransitionEdge</code> will be generated and then a new CFGJob will be produced and added to the queue.
+<strong>TODO: clarify Ijk_InvalICache</strong></p>
+
+<p>If the jumpkind is <code class="highlighter-rouge">Ijk_Call</code> or something with the prefix <code class="highlighter-rouge">Ijk_Sys</code>, <code class="highlighter-rouge">_create_job_call</code> will be called. In it the target will be given a CFGJob, the analysis continues.</p>
+
+<p>Now let’s go back to function <code class="highlighter-rouge">_process_job_and_get_successors</code> in <code class="highlighter-rouge">forward_analysis</code>, we can see that after collecting all <code class="highlighter-rouge">successors</code>, angr starts to handle each of them.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>for successor in successors:
+  new_jobs = self._handle_successor(job, successor, successors)
+</code></pre></div></div>
+<p>Interestingly, I found the implementation of <code class="highlighter-rouge">_handle_successor</code> is quite simple, just one statement <code class="highlighter-rouge">return [successor]</code>, which means most of the work of generating a CFG has been done in <code class="highlighter-rouge">_get_successors</code> function.</p>
+
+<p>Uptill now, we have almost finish analyzing the whole work flow of CFGFast, but there is still a question, how does angr deal with <code class="highlighter-rouge">indirect jump targets</code>? For example, what if the target is stored in a general-purpose register? I will take MIPS as the example to uncover this.</p>
+
+
+  </div><a class="u-url" href="/angr/2020/03/31/angr-CFGFast_1.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Personal blog of Shuaike Dong</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Personal blog of Shuaike Dong</li><li><a class="u-email" href="mailto:dsk930817@gmail.com">dsk930817@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>A personal blog of my daily research life.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
