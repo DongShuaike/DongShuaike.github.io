@@ -7,7 +7,7 @@ categories: tensorflow
 
 
 
-Recently I was working on a new project around **deep learning framework fuzzing** which seems very exciting. I choose **Tensorflow** as the target since its complexity and variety of components appear to be more **vulnerable :-)**.
+Recently I was working on a new project around **deep learning framework fuzzing** which seems very exciting. I choose **Tensorflow** as the target since its complexity and variety of components.
 
 The figure below shows the whole architecture of Tensorflow. From it we know what we usually use in normal days are only a small part of the whole system (mainly **Python client**). To make the fuzzing deeper, I decide to target Tensorflow low-level functions, especially **C APIs** and those **kernel implementations**.
 
@@ -15,7 +15,7 @@ The figure below shows the whole architecture of Tensorflow. From it we know wha
 
 
 
-The first thing to do is compilation of source code, during which I can get familiar with overall structure of Tensorflow and learn how to play with its C-implemented interfaces. However, the journey  was not smooth.
+The first thing to do is to compile its source code, during which I can get familiar with overall structure of Tensorflow and learn how to play with its C-implemented interfaces. However, the journey  was not smooth.
 
 In this post I will record all "holes" I got stuck at and "ad hoc" way to solve them. I hope my solution can help those also compiling Tensorflow. Since I have **no GPUs** on my poor PC, I take the CPU-version instead and  unaware of GPU-related issues.
 
@@ -23,7 +23,7 @@ In this post I will record all "holes" I got stuck at and "ad hoc" way to solve 
 
 #### Tested build configurations
 
-[Tested build configurations ]: 	"https://www.tensorflow.org/install/source#linux "
+[Tested build configurations on official website ](https://www.tensorflow.org/install/source#linux)
 
 The first and most important reference I should mention is the tested build configuration page on Tensorflow's official website. One of my bad experiences is to copy the procedures on a `gcc-7.5` PC to a `gcc-9.3` laptop.  You are recommended to make your environment consistent to ones tested by the official. For me, it is `bazel 0.26.1`+`Python 3.6` + `tensorflow 2.0.0`. (ubuntu 18.04)
 
@@ -32,17 +32,17 @@ The first and most important reference I should mention is the tested build conf
 Google has changed its default building tool from cmake to their own **bazel**. I spent sometime getting familiarized with its syntax.  Each project built with bazel should have a file called `workspace.bzl` . Inside it listed **how to acquire other projects' sources.**  Below I copies some code snippets of it, which are about the `eigen` library, a very famous C++ template library for linear algebra.
 
 ```python
-    tf_http_archive(
-        name = "eigen_archive",
-        build_file = clean_dep("//third_party:eigen.BUILD"),
-        patch_file = clean_dep("//third_party/eigen3:gpu_packet_math.patch"),
-        sha256 = "f3d69ac773ecaf3602cb940040390d4e71a501bb145ca9e01ce5464cf6d4eb68",
-        strip_prefix = "eigen-eigen-049af2f56331",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz",
-            "https://bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz",
-        ],
-    )
+tf_http_archive(
+    name = "eigen_archive",
+    build_file = clean_dep("//third_party:eigen.BUILD"),
+    patch_file = clean_dep("//third_party/eigen3:gpu_packet_math.patch"),
+    sha256 = "f3d69ac773ecaf3602cb940040390d4e71a501bb145ca9e01ce5464cf6d4eb68",
+    strip_prefix = "eigen-eigen-049af2f56331",
+    urls = [
+        "https://storage.googleapis.com/mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz",
+        "https://bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz",
+    ],
+)
 ```
 
  Although there are materials saying `bazel build` will automatically install all needed external and third-party dependencies listed in `tensorflow/tensorflow/workspace.bzl`, I fail to reach that (due to the unfamiliarity with bazel I think). **will update this part once I fix it.**
