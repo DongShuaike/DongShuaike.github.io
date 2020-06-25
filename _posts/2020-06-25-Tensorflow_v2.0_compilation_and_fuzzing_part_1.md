@@ -58,7 +58,7 @@ tf_http_archive(
    pip install -U --user keras_preprocessing --no-deps
    ```
 
-   If you are careless and forgot to install **keras\*** related dependencies above, you will get following errors when you are building python `.whl`  files (`bazel build //tensorflow/tools/pip_package:build_pip_package`). 
+   If you are careless and forgot to install **keras\*** related dependencies above, you will get following errors when you are building python `.whl`  files (`bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package`). 
 
    ```python
    ModuleNotFoundError: No module named 'keras_preprocessing'
@@ -361,7 +361,7 @@ If you have managed the above, congratulations! Now you can link them and write 
 
    ### Conclusion
 
-   The compilation is not easy and I really think the introduction section on the Tensorflow official website is somewhat too abbreviate. I hope this post can help you and in the next post, I will introduce some of my practice of fuzzing Tensorflow source code.
+   The compilation is not easy and I really think the introduction section on the Tensorflow official website is somewhat too abbreviate. I hope this post can help you and in the next post, I will introduce some of my practice on fuzzing Tensorflow source code.
 
    
 
