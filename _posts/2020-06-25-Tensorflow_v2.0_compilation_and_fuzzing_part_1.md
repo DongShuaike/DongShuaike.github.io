@@ -69,7 +69,7 @@ tf_http_archive(
 
 2. Google protocol buffers
 
-   [Protocol Buffers]:https://developers.google.com/protocol-buffers	"Protocol Buffers "
+   [Google protocol buffers](https://developers.google.com/protocol-buffers)
 
    are Google's serializing libraries. It is widely-used in Tensorflow project due to its fascinating **code generation** feature. You have to install it before compiling Tensorflow. To notice, **you'd better install the version listed in `workspace.bzl` file** . For me, it is
 
@@ -267,7 +267,7 @@ bazel build //tensorflow:tensorflow_cc
 bazel build //tensorflow:tensorflow_framework
 ```
 
-After around 1~2 hours (depends on your hardware), you will get these three shared library objects in `tensorflow/bazel-bin/tensorflow`.
+After around 1~2 hours (depending on your hardware), you will get these three shared library objects in `tensorflow/bazel-bin/tensorflow`.
 
 ### Build python `.whl` binary
 
@@ -284,51 +284,6 @@ If everything is fine, you will find a `*.whl` file in `/tmp/tensorflow_pkg`. Us
 ### Other weird issues
 
 If you have managed the above, congratulations! Now you can link them and write your own C programs. However, when I "migrated" my above procedures to one of my laptops, I met other issues. I will list them by errors.
-
-1. Check your GCC version
-
-   When I was running `bazel build //tensorflow/tools/pip_package:build_pip_package`, I got following errors:
-
-   ```
-   ERROR: /home/dsk/Alipay/tensorflow/tensorflow/core/platform/BUILD:98:1: undeclared inclusion(s) in rule '//tensorflow/core/platform:cpu_info':
-   
-   this rule is missing dependency declarations for the following files included by 'tensorflow/core/platform/cpu_info.cc':
-     'absl/base/log_severity.h'
-     'absl/base/attributes.h'
-     'absl/base/config.h'
-     'absl/base/options.h'
-     'absl/base/policy_checks.h'
-     'absl/strings/string_view.h'
-     'absl/base/internal/throw_delegate.h'
-     'absl/base/macros.h'
-     'absl/base/optimization.h'
-     'absl/base/port.h'
-   Target //tensorflow/tools/pip_package:build_pip_package failed to build
-   Use --verbose_failures to see the command lines of failed build steps.
-   
-   ```
-
-   I spent a lot of time fixing this and finally find the **inconsistent gcc(g++) version** led to this. Then I downgraded gcc with following commands:
-
-   ```bash
-   sudo apt-get install -y software-properties-common
-   sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-   sudo apt update
-   sudo apt install g++-7 -y
-   sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 60 \
-                            --slave /usr/bin/g++ g++ /usr/bin/g++-7 
-   sudo update-alternatives --config gcc
-   ```
-
-   Also, don't forget to put the new GCC's `include` path to the environment variable
-
-   In your `~/.bashrc`, add the following:
-
-   ```bash
-   export CPLUS_INCLUDE_PATH="/usr/lib/gcc/x86_64-linux-gnu/7/include/:$CPLUS_INCLUDE_PATH"
-   ```
-
-   Now build again.
 
 2. grpc issue
 
