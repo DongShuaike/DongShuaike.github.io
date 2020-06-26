@@ -45,7 +45,34 @@ tf_http_archive(
 )
 ```
 
- Although there are materials saying `bazel build` will automatically install all needed external and third-party dependencies listed in `tensorflow/tensorflow/workspace.bzl`, I fail to reach that (due to the unfamiliarity with bazel I think). **will update this part once I fix it.**
+ Although there are materials saying `bazel build` will automatically install all needed external and third-party dependencies listed in `tensorflow/tensorflow/workspace.bzl`, ~~I fail to reach that (due to the unfamiliarity with bazel I think). **will update this part once I fix it.**~~
+
+### Update on Jun 26
+
+***Bazel provides a convenient way to download --> compile --> install needed third-party libraries.*** (I finally figured it out :)
+
+Just modify the `BUILD` file in `tensorflow/third_party`by adding `exports_files` statements.
+
+```python
+licenses(["notice"]) # do not change
+
+exports_files(['com_google_absl.BUILD']) # add what you like to install
+...
+```
+
+According to your configuration, Tensorflow provides a set of third-party library BUILD files for you to install.
+
+```bash
+➜  third_party git:(r2.0) ✗ ls *.BUILD
+arm_neon_2_x86_sse.BUILD  double_conversion.BUILD  jsoncpp.BUILD     pprof.BUILD      tflite_mobilenet.BUILD
+astor.BUILD               eigen.BUILD              libxsmm.BUILD     pybind11.BUILD   tflite_mobilenet_float.BUILD
+backports_weakref.BUILD   enum34.BUILD             linenoise.BUILD   rocprim.BUILD    tflite_mobilenet_quant.BUILD
+codegen.BUILD             farmhash.BUILD           lmdb.BUILD        six.BUILD        tflite_ovic_testdata.BUILD
+com_google_absl.BUILD     functools32.BUILD        nanopb.BUILD      snappy.BUILD     tflite_smartreply.BUILD
+cub.BUILD                 gast.BUILD               opt_einsum.BUILD  sqlite.BUILD     wrapt.BUILD
+curl.BUILD                gif.BUILD                pcre.BUILD        swig.BUILD       zlib.BUILD
+cython.BUILD              googleapis.BUILD         png.BUILD         termcolor.BUILD
+```
 
 #### Setup before bazel building
 
@@ -71,7 +98,9 @@ tf_http_archive(
 
    [Google protocol buffers](https://developers.google.com/protocol-buffers)
 
-   are Google's serializing libraries. It is widely-used in Tensorflow project due to its fascinating **code generation** feature. You have to install it before compiling Tensorflow. To notice, **you'd better install the version listed in `workspace.bzl` file** . For me, it is
+   are Google's serializing libraries. 
+
+   It is widely-used in Tensorflow project due to its fascinating **code generation** feature. ~~You have to install it before compiling Tensorflow~~. To notice, **you'd better install the version listed in `workspace.bzl` file** . For me, it is
 
    ```python
     PROTOBUF_URLS = [
@@ -84,7 +113,11 @@ tf_http_archive(
 
    Copy the URL and `wget` it, then follow the `ReadMe` file to install it to your system. Finally, the protobuf libraries will be installed to `/usr/local/lib`.
 
+   Although you can use bazel to install it temporarily, I still would like to install it by myself for the future use.
+
 3. Eigen library
+
+   ***(UPDATE on Jun 26, you can also use `exports_files` approach mentioned above to temporarily download and install Eigen library)***
 
    Different from protocol buffers, we don't need to `make` and `make install` Eigen library. Just download the needed version and decompress it to a folder. Add the path involving `eigen3` to the environment variable `CPLUS_INCLUDE_PATH` like below:
 
@@ -132,7 +165,7 @@ tf_http_archive(
 
 4. abseil library
 
-   Another library you should involve is [abseil-cpp](https://github.com/abseil/abseil-cpp) . `git clone` this project and put it under the root of Tensorflow (where you have another `tensorflow` subfolder, `third_party` and `tools`). Also note to add a soft link to it.
+   Another library you should have is [abseil-cpp](https://github.com/abseil/abseil-cpp) . ~~`git clone` this project and put it under the root of Tensorflow (where you have another `tensorflow` subfolder, `third_party` and `tools`). Also note to add a soft link to it.~~ ***(This is the old solution, sometimes it works, but sometimes it  brings a lot of trouble, see section "Other Issues" below, use Bazel to install it)***
 
    ```bash
    $ git clone https://github.com/abseil/abseil-cpp.git
@@ -147,7 +180,7 @@ tf_http_archive(
 
 ### Build it!
 
-To test C implementations in Tensorflow, we need to get some **shared library files**, in my case, **tensorflow.so**, **tensorflow_cc.so** and **tensorflow_framework.so**. All the descriptions of these three libraries are listed in `tensorflow/tensorflow/BUILD` file. Reading the `deps` part you will have a rough idea of what are those libraries for. 
+To test C implementations in Tensorflow, we need compile some **shared library files**, in my case, **tensorflow.so**, **tensorflow_cc.so** and **tensorflow_framework.so**. All the descriptions of these three libraries are listed in `tensorflow/tensorflow/BUILD` file. Reading the `deps` part you will have a rough idea of what are those libraries for. 
 
 `libtensorflow.so`:
 
@@ -285,6 +318,35 @@ If everything is fine, you will find a `*.whl` file in `/tmp/tensorflow_pkg`. Us
 
 If you have managed the above, congratulations! Now you can link them and write your own C programs. However, when I "migrated" my above procedures to one of my laptops, I met other issues. I will list them by errors.
 
+1. Annoying inconsistency issue due to the manual installation of abseil-cpp library
+
+   I once met the following errors:
+
+   ```bash
+   ERROR: /home/dsk/xxx/tensorflow/tensorflow/core/platform/BUILD:98:1: undeclared inclusion(s) in rule '//tensorflow/core/platform:cpu_info':
+   
+   this rule is missing dependency declarations for the following files included by 'tensorflow/core/platform/cpu_info.cc':
+     'absl/base/log_severity.h'
+     'absl/base/attributes.h'
+     'absl/base/config.h'
+     'absl/base/options.h'
+     'absl/base/policy_checks.h'
+     'absl/strings/string_view.h'
+     'absl/base/internal/throw_delegate.h'
+     'absl/base/macros.h'
+     'absl/base/optimization.h'
+     'absl/base/port.h'
+   Target //tensorflow/tools/pip_package:build_pip_package failed to build
+   Use --verbose_failures to see the command lines of failed build steps.
+   
+   ```
+
+   It took me a looooooong time debugging this and I still cannot fix it. However, after I figured out the "bazel way" to install abseil-cpp library, everything becomes fine.  Just add the following line to `tensorflow/third_party/BUILD`:
+
+   ```python
+   exports_files(['com_google_absl.BUILD'])
+   ```
+
 2. grpc issue
 
    If you met the following error:
@@ -311,6 +373,34 @@ If you have managed the above, congratulations! Now you can link them and write 
    wget https://nomeroff.net.ua/tf/Rename-gettid-functions.patch
    cp ./Rename-gettid-functions.patch ./third_party/Rename-gettid-functions.patch
    ```
+
+3. Errors due to wrong Python version
+
+   I met following errors when executing `bazel build //tensorflow/tools/build_pip_package` with  `Python v3.8`, which is not among the tested configurations on Tensorflow official website.
+
+   ```bash
+   ERROR: /home/dsk/xxx/tensorflow/tensorflow/python/BUILD:341:1: C++ compilation of rule '//tensorflow/python:ndarray_tensor_bridge' failed (Exit 1)
+   tensorflow/python/lib/core/ndarray_tensor_bridge.cc:108:1: error: cannot convert 'std::nullptr_t' to 'Py_ssize_t {aka long int}' in initialization
+    };
+    ^
+   Target //tensorflow/tools/pip_package:build_pip_package failed to build
+   
+   ```
+
+   I found the reason in  [vtk fails to build with Python 3.8](https://bugzilla.redhat.com/show_bug.cgi?id=1718837)
+
+   > ```
+   > In Python 3.8, the reserved "tp_print" slot was changed from a function pointer to a number, `Py_ssize_t tp_vectorcall_offset`.
+   > In C, there is no "nullptr"; either a 0 or NULL casts automatically to both pointers and numbers.
+   > 
+   > Please use 0 instead of "nullptr" in the slot to be source-compatible both with Python 3.8 and previous versions.
+   > 
+   > See this as an example PR: https://github.com/YafaRay/Core/pull/114
+   > 
+   > -- Miro Hrončok 
+   > ```
+
+   You should **re-configure** the whole project to switch to an older Python, which means everything will be compiled once again :-).
 
    
 
