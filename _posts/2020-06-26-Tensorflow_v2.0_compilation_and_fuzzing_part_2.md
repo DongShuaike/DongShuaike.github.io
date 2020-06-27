@@ -207,10 +207,7 @@ Then, in the function `BuildGraph`, four `Placeholder`s are created to act as di
     on_tensor.scalar<uint8>()() = on;
     off_tensor.scalar<uint8>()() = off;
 
-    RunInputs({{"input", input_tensor},
-               {"depth", depth_tensor},
-               {"on", on_tensor},
-               {"off", off_tensor}});
+    RunInputs({{"input", input_tensor},{"depth", depth_tensor},{"on", on_tensor},{"off", off_tensor}});
   }
 ```
 
